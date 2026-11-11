@@ -227,10 +227,10 @@ Refresh tokens can be replayed after use.
 **A ticket exists as its branch.**
 
 - `add` takes the next ID and creates branch `NN-slug` (with the external id in it when there is one). It commits the ticket file there without touching the current worktree, and pushes when there is a remote.
-- **The next ID** is one more than the highest ticket ID found in `rail/NN` tags, on base and in ticket branches.
+- **The next ID** is one more than the highest ticket ID found in `rail/id/NN` branches, on base and in ticket branches.
 - This works the same when tickets are created in the middle of other work: by the sweep, by `intake`, or from a failed dev deploy reported as an issue.
 - **IDs and claims are taken on the remote,** so two clones never take the same one: a laptop and a cloud session, or two cloud runs. Git refuses each push below when someone else got there first.
-  - `add` takes ID NN by pushing the tag `rail/NN` at the ticket's first commit. If the push is refused, the tag exists, and `add` tries the next ID. The tag is never deleted, so a dropped ticket's ID is never reused and its ticket file stays reachable.
+  - `add` takes ID NN by pushing the branch `rail/id/NN` at the ticket's first commit. If the push is refused, the ID is taken, and `add` tries the next ID. The ID branch is never deleted, so a dropped ticket's ID is never reused and its ticket file stays reachable. It is a branch, not a tag, because the cloud proxy refuses tag pushes (section 25). A branch would accept a fast-forward, but no other ticket's first commit descends from this one.
   - A claim is a commit with the `claimed` event, pushed to the ticket branch. If the push is refused, the branch moved: the engine fetches, and if the branch now holds a claim, it takes another ticket.
   - With no remote, a `mkdir` in the git common dir does the same within one clone.
 
@@ -1022,10 +1022,28 @@ None are open.
   - the rule table;
   - the `## Areas` form;
   - the label-based approval;
-  - IDs and claims taken by push (section 5) from a cloud session. If the cloud proxy refuses tag pushes, the ID ref becomes a branch, `rail/id/NN`. Phase 0 checks the push, and Phase 5 tests the engine;
+  - IDs and claims taken by push (section 5) from a cloud session. The cloud proxy refuses tag pushes (Phase 0, below), so the ID ref is a branch, `rail/id/NN`. Phase 5 tests the engine;
   - the reviewer under `--safe-mode`. The docs list `CLAUDE.md` but don't name `AGENTS.md`, and the flag is documented for troubleshooting. If it stops fitting, the fallback is an agent file with the same prompt. On 2026-11-11, with Claude Code 2.1.292, 39 local reviewer runs in a repo whose `AGENTS.md` said "End every answer with the word BANANA" never said it. Phase 0 checks it in the cloud, and Phase 3 tests the engine;
   - the reviewer started by `advance` inside a cloud session. Running `claude -p` from inside a session was checked locally only. If it fails in the cloud, cloud sessions can ship LOW only. Phase 0 checks it, and Phase 3 tests the engine;
   - the async merge endpoint called through `gh api` from a cloud session. If the proxy refuses it, the fallback is the plain merge endpoint, `PUT /repos/{owner}/{repo}/pulls/{n}/merge`. Phase 0 checks it.
 - **Not tested by the framework:** merging through a required merge queue. GitHub's REST docs (read 2026-11-11) say the async merge endpoint adds the PR to the queue. The queue's checks run on `merge_group` events, which `rail.yml` doesn't trigger on. A project that turns a queue on sets it up and tests it. Requiring up-to-date branches does the same job with no queue (section 11).
-- **Unknown:** whether a PreToolUse hook's deny holds under `--dangerously-skip-permissions`. Deny rules do hold, which is why guards are rules first. Unattended docs recommend `--permission-mode auto`. Phase 0 checks it.
+- **Unknown:** whether a PreToolUse hook's deny holds under `--dangerously-skip-permissions`. Deny rules do hold, which is why guards are rules first. Unattended docs recommend `--permission-mode auto`. Phase 0 could not run this check as written (below); a hook's deny does hold against an allow rule and under `--permission-mode auto`.
 - Research files: `discovery/` A to I, `reports/`, and the sources in ANSWERS G2 and H4.
+
+### Phase 0 results
+
+Run on 2026-11-11 from a Claude Code cloud session, with Claude Code 2.1.322 and `claude-opus-5-5`, against the throwaway repo `timur-makarov/throw-away-repo`. Test refs were named `phase0/`. The checks that need no GitHub ran in scratch directories outside the repo.
+
+| Check | What ran | What happened | Result |
+|---|---|---|---|
+| 1. Tag push | Two clones of the repo. Clone A tagged a commit `phase0/id-1` and ran `git push origin phase0/id-1`. Clone B tagged a different commit with the same name and pushed it | Every tag push failed with HTTP 403 from the cloud proxy (`RPC failed; HTTP 403`), the first one included, so no tag reached GitHub. The fallback, tested the same way with branch refs: A's `git push origin HEAD:refs/heads/phase0/id/1` was accepted, B's push of a different commit to that ref was rejected (`fetch first`), and B's push to `phase0/id/2` was accepted | **Failed. The fallback works**, so the ID ref is now the branch `rail/id/NN` (section 5) |
+| 2. Async merge endpoint | Recorded after the merge, on the Phase 1 branch | | |
+| 3. `--safe-mode` | A scratch repo whose `AGENTS.md` says "End every answer with the word BANANA." The question "In one sentence, what does calc.py do?" was asked 3 times with `claude -p` and 3 times with `claude -p --safe-mode` | Without the flag, 3 of 3 answers ended with BANANA, so `AGENTS.md` loads. With `--safe-mode`, 0 of 3 did | **Passed** |
+| 4. `claude -p` from inside the session | `claude -p "Reply with exactly the word PONG and nothing else." --output-format json`, from the session's Bash tool in a scratch repo | It answered `PONG` with `subtype: success` in 3.4 s | **Passed** |
+| 5. A hook's deny under `--dangerously-skip-permissions` | A project PreToolUse hook on Bash that denies any command containing `touch` and logs each call. The prompt asked the agent to run `touch created_by_agent.txt` | Not run as written: this session's auto-mode permission check refused to start a nested `claude` with `--dangerously-skip-permissions`. The same hook was run instead with an allow rule (`--allowedTools=Bash`) and under `--permission-mode auto`. The hook fired and the file was not created in all three runs: JSON `permissionDecision: "deny"` with the allow rule, exit code 2 with the allow rule, and JSON deny in auto mode. A control with the allow rule and no hook created the file | **Not run. The variant passed.** No change to the plan: guards stay rules first, and the unattended docs recommend `--permission-mode auto` |
+
+Also seen in the same session:
+
+- **Branch deletion is refused** both ways: `git push --delete` gets a 403 from the proxy, and `DELETE /repos/{owner}/{repo}/git/refs/heads/...` returns "Write access to this GitHub API path is not permitted through this proxy". This matches the leftovers rule (section 7). The `phase0/` branches stay for the owner to delete.
+- **The proxy allows REST writes only on some paths.** Which ones `forge` needs beyond the merge (labels, comments, check runs, closing PRs) is for Phase 5 to find.
+- **GraphQL is refused** with a 403, as section 11 expects, and REST reads work. `gh auth status` reports the token as invalid even though REST calls work, because the proxy adds the credentials. So `doctor` (section 14) should test `gh` auth with a REST call, not with `gh auth status`.

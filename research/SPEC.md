@@ -232,7 +232,7 @@ One file per ticket. The engine appends one entry per run.
 | `in-ci` | A `shipped` event and a complete review for the current patch. From the forge: checks still running |
 | `merge-ready` | From the forge: checks green on the head. No finding open |
 | `merged` | From git: a squash commit with `Ticket: NN` on base |
-| `dropped` | A `dropped` event. Or the PR is closed unmerged. Or the `rail/NN` tag exists with no branch and no merge |
+| `dropped` | A `dropped` event. Or the PR is closed unmerged. Or the `rail/id/NN` branch exists with no ticket branch and no merge |
 
 **A wait has no event of its own.** Each is derived, so `status`, the `notify` hook and the label all read the same facts:
 
@@ -259,4 +259,4 @@ The plan leaves these open, so each is a choice made here:
 4. **`open` is an outcome,** written by the engine. The events file alone then says whether every finding is answered.
 5. **The retry budget counts failures since the step last passed.** The plan says "attempts per step" and doesn't say whether a pass resets the count.
 6. **Waits are derived, not logged.** The one exception is `continued`, which resets the budget and carries the person's note.
-7. **A dropped ticket's journal goes with its branch.** Only the ticket file stays reachable, through the `rail/NN` tag.
+7. **A dropped ticket's journal goes with its branch.** Only the ticket file stays reachable, through the `rail/id/NN` branch.
