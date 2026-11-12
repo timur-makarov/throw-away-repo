@@ -701,6 +701,67 @@
       "cost_usd": 2.2784676,
       "summary": "No new findings. I ran all six Done Contract checks (they pass), confirmed the engine, pack, ruleset, workflow and ticket template are byte-identical to the framework at the commit in `.rail/SOURCE`, ran the framework's 167 tests on that engine (OK), and probed the guard with about 60 command lines against main's engine in both local and cloud mode. F28 is not repeated: `docs/loop.md` in this copy now describes that behaviour as intended.",
       "findings": []
+    },
+    {
+      "run": 21,
+      "role": "security",
+      "patch_id": "ce846e860d601725897bcd7387cc593bf799ab6c",
+      "head": "1a6e458f6cfe",
+      "tier": "HIGH",
+      "at": "2026-11-12T19:12:23Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.9871760000000003,
+      "summary": "Security seat re-review. I ran about 70 command shapes through `rail hook guard` with this change's engine and with origin/main's, and through real bash with stub `git`/`gh`, and I exercised the new machine-level guard from a folder above a clone. The earlier findings F10\u2013F33 hold as fixed in what I re-ran, but the gh repository-naming logic still lets three kinds of merge of this project's pull request pass that main denies (two blocking findings), and the machine guard fails open on branch-dependent rules (advisory). I did not re-test the claim, save and provision paths beyond reading the diff.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 487,
+          "claim": "A `gh api` merge whose endpoint names the repository by id (`repositories/ID/pulls/5/merge`) is taken as another repository's whenever any other word hints at one: `GH_REPO=other/x` in front (gh api uses GH_REPO only for `{owner}/{repo}` placeholders) or a field value such as `-f commit_title=repos/other/y/z` (the new `[/=]` in the regex reads option values). Both merge this project's pull request and pass; main's engine denies both, and a merged unshipped pull request now counts as the person's approval. This is the F11/F32 class again.",
+          "check": "Add to test_a_merge_is_judged_by_the_repository_it_names and the bash matrix: `gh api -X PUT repositories/N/pulls/5/merge` with `GH_REPO=other/x` in front and with `-f k=repos/other/y/z` must be denied; more generally a `gh api` merge is 'other' only when the endpoint word itself names another OWNER/NAME.",
+          "evidence": {
+            "command": "python3 cmp.py $PWD c2.json   (each command through `rail hook guard` with this change's engine and origin/main's, RAIL_CLOUD=0, cwd = the ticket worktree; then bash -c with stub gh)",
+            "output": "new=pass old=deny 'GH_REPO=other/x gh api -X PUT repositories/123/pulls/5/merge'\n      bash=['RAN: gh api -X PUT repositories/123/pulls/5/merge [GH_REPO=other/x ... pwd=.../worktrees/9]']\nnew=pass old=deny 'GH_REPO=other/x gh api --method PUT /repositories/123/pulls/5/merge -f merge_method=squash'\nnew=pass old=deny 'gh api -X PUT repositories/123/pulls/5/merge -f commit_title=repos/other/y/z'\n      bash=['RAN: gh api -X PUT repositories/123/pulls/5/merge -f commit_title=repos/other/y/z [GH_REPO=unset ...]']\nnew=deny old=deny 'gh api -X PUT repositories/123/pulls/5/merge'"
+          },
+          "id": "F36"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 474,
+          "claim": "A `GH_REPO=other/x` assignment in front of the command is believed even when a wrapper between it and `gh` removes it from the environment: `GH_REPO=other/x env --unset=GH_REPO gh pr merge 5`, `env -uGH_REPO` and `env -i PATH=\"$PATH\" gh pr merge 5` all run `gh pr merge 5` on this checkout's repository with GH_REPO unset, and pass. Main's engine denies all three; this is F32's class (an assignment that doesn't decide the repository).",
+          "check": "Bash-matrix cases with stub gh printing $GH_REPO: `GH_REPO=other/x env --unset=GH_REPO gh pr merge 5`, `env -uGH_REPO`, `env -i`, `exec -c` must be denied. A GH_REPO= hint should count only when no wrapper word between it and gh can clear or reset the environment (env -u/--unset/-i, exec -c, sudo/doas).",
+          "evidence": {
+            "command": "python3 cmp.py $PWD c2.json   (same three-way comparison)",
+            "output": "new=pass old=deny 'GH_REPO=other/x env --unset=GH_REPO gh pr merge 5'\n      bash=['RAN: gh pr merge 5 [GH_REPO=unset GIT_DIR=unset pwd=/home/user/throw-away-repo/.claude/worktrees/9]']\nnew=pass old=deny 'GH_REPO=other/x env -uGH_REPO gh pr merge 5'\n      bash=['RAN: gh pr merge 5 [GH_REPO=unset ...]']\nnew=pass old=deny 'GH_REPO=other/x env -i PATH=\"$PATH\" STUBLOG=\"$STUBLOG\" gh pr merge 5'\n      bash=['RAN: gh pr merge 5 [GH_REPO=unset ...]']"
+          },
+          "id": "F37"
+        },
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/hooks.py",
+          "line": 109,
+          "claim": "The new machine-level guard (`rail hook guard --machine`, for a session that stands above its repositories) sets the branch to \"\" when the session's folder is not inside a project, so every rule that depends on the current branch fails open once the guard loses track of the directory: `cd repo; git push`, `cd repo` + newline + `git push origin`, `pushd repo; git push -u origin` and `cd repo; git merge 9-x` pass with the repository checked out on main, while the `&&` forms are denied. docs/guards.md says what the guard can't follow is judged as this project's.",
+          "check": "A test that runs `hook guard --machine` with cwd above a clone checked out on the base branch and expects deny for `cd repo; git push` and `cd repo; git merge x`. When the place is unknown, judge the command against each project's own checked-out branch.",
+          "evidence": {
+            "command": "clone on main at W/repo with this change's engine; cd W; printf '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"%s\"},\"cwd\":\"'$PWD'\",\"session_id\":\"s1\"}' \"$c\" | RAIL_CLOUD=1 repo/.rail/bin/rail hook guard --machine",
+            "output": "cd repo && git push                \"permissionDecision\": \"deny\"\ncd repo; git push                  pass\ncd repo\\ngit push origin           pass\ncd repo && git merge 9-x           \"permissionDecision\": \"deny\"\ncd repo; git merge 9-x             pass\npushd repo; git push -u origin     pass"
+          },
+          "id": "F38"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 459,
+          "claim": "A repository name with a variable inside it is read as another repository's name, so `O=timur-makarov; gh pr merge 5 -R $O/throw-away-repo` and `gh api -X PUT repos/timur-makarov/throw-away-rep${x}o/pulls/5/merge` pass and merge this project's pull request; `GH_REPO=other/x env -u GH_REPO gh pr merge 5` passes too. A command inside a function body (`f() { git push -f origin x; }; f`) and a `cd` resolved through CDPATH are not read either. Main's engine passes all of these as well.",
+          "check": "Treat a repository hint containing `$` or a backtick as unreadable (judged by where the command runs), and add these lines to the bash matrix.",
+          "evidence": {
+            "command": "python3 cmp.py $PWD c1.json   (same three-way comparison)",
+            "output": "new=pass old=pass 'O=timur-makarov; gh pr merge 5 -R $O/throw-away-repo'\n      bash=['RAN: gh pr merge 5 -R timur-makarov/throw-away-repo ...']\nnew=pass old=pass 'gh api -X PUT repos/timur-makarov/throw-away-rep${x}o/pulls/5/merge'\n      bash=['RAN: gh api -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge ...']\nnew=pass old=pass 'GH_REPO=other/x env -u GH_REPO gh pr merge 5'\n      bash=['RAN: gh pr merge 5 [GH_REPO=unset ...]']\nnew=pass old=pass 'f() { git push -f origin x; }; f'\n      bash=['RAN: git push -f origin x ...']\nnew=pass old=pass 'export CDPATH=/home/user/throw-away-repo/.claude/worktrees; cd /tmp && cd 9 && git push -f origin x'\n      bash=['RAN: git push -f origin x [... pwd=/home/user/throw-away-repo/.claude/worktrees/9]']"
+          },
+          "id": "F39"
+        }
+      ]
     }
   ]
 }
