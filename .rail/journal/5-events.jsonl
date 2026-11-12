@@ -1,0 +1,13 @@
+{"v":1,"at":"2026-11-12T11:42:36Z","ticket":"5","event":"accepted","by":"engine","via":"lint","tier":"LOW","contract":"f21949ef453f","done":"cdbc1ab9f9f9","scope_paths":["calc/__init__.py","tests/test_calc.py"]}
+{"v":1,"at":"2026-11-12T11:42:39Z","ticket":"5","event":"claimed","session":"64993a07-26e3-5628-bca6-245bef70baf9","takeover":false}
+{"v":1,"at":"2026-11-12T11:43:01Z","ticket":"5","event":"step","step":"ticket-lint","status":"ran","result":"pass","patch_id":"7b6ac9b822fdc9fbfff314617edff45843f7432a"}
+{"v":1,"at":"2026-11-12T11:43:01Z","ticket":"5","event":"step","step":"assumptions","status":"ran","result":"pass","patch_id":"7b6ac9b822fdc9fbfff314617edff45843f7432a"}
+{"v":1,"at":"2026-11-12T11:43:01Z","ticket":"5","event":"step","step":"scope","status":"ran","result":"pass","patch_id":"7b6ac9b822fdc9fbfff314617edff45843f7432a"}
+{"v":1,"at":"2026-11-12T11:43:01Z","ticket":"5","event":"step","step":"rules","status":"ran","result":"pass","patch_id":"7b6ac9b822fdc9fbfff314617edff45843f7432a"}
+{"v":1,"at":"2026-11-12T11:43:01Z","ticket":"5","event":"step","step":"size","status":"ran","result":"pass","patch_id":"7b6ac9b822fdc9fbfff314617edff45843f7432a","detail":"size 8/300"}
+{"v":1,"at":"2026-11-12T11:43:01Z","ticket":"5","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":"7b6ac9b822fdc9fbfff314617edff45843f7432a"}
+{"v":1,"at":"2026-11-12T11:43:01Z","ticket":"5","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"7b6ac9b822fdc9fbfff314617edff45843f7432a","detail":"exit 0","duration_ms":88}
+{"v":1,"at":"2026-11-12T11:43:01Z","ticket":"5","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"7b6ac9b822fdc9fbfff314617edff45843f7432a","detail":"python3 -c \"import calc; assert calc.power(2, 10) == 1024\"","duration_ms":17}
+{"v":1,"at":"2026-11-12T11:43:01Z","ticket":"5","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"7b6ac9b822fdc9fbfff314617edff45843f7432a","detail":"python3 -c \"import calc; assert calc.power(2, -1) == 0.5\"","duration_ms":19}
+{"v":1,"at":"2026-11-12T11:43:01Z","ticket":"5","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"7b6ac9b822fdc9fbfff314617edff45843f7432a","detail":"python3 -m unittest discover -s tests -q","duration_ms":56}
+{"v":1,"at":"2026-11-12T11:43:01Z","ticket":"5","event":"shipped","patch_id":"7b6ac9b822fdc9fbfff314617edff45843f7432a","head":"4de389aa2949","tier":"LOW","size":8}
