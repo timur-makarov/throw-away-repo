@@ -26,6 +26,10 @@ class CalcTest(unittest.TestCase):
         self.assertEqual(calc.power(2, 10), 1024)
         self.assertEqual(calc.power(2, -1), 0.5)
 
+    def test_zero_to_a_negative_power_is_a_calc_error(self):
+        with self.assertRaises(calc.CalcError):
+            calc.power(0, -1)
+
 
 if __name__ == "__main__":
     unittest.main()
