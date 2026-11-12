@@ -850,6 +850,42 @@
       "cost_usd": 2.5747884,
       "summary": "No new findings. All six Done Contract checks pass, and `.rail/engine`, `.rail/packs`, `ruleset.json`, `rail.yml`, `TEMPLATE.md`, `AGENTS.md` and the settings rules match the framework at the `.rail/SOURCE` commit (df7dd09), whose 167 tests pass. I probed the guard hook with about 70 everyday and malformed commands (no crash or false deny), confirmed the machine asks step aside in a cloud session while the rail denies stay, and checked that tickets 1\u20139 derive correctly under the new counter branch. F28 is not repeated: `docs/loop.md` now states the declined behaviour as intended.",
       "findings": []
+    },
+    {
+      "run": 26,
+      "role": "security",
+      "patch_id": "7fa7640ffdfe9f0a454349886a758d18a86a0e53",
+      "head": "97471a866445",
+      "tier": "HIGH",
+      "at": "2026-11-12T19:46:32Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.0114976,
+      "summary": "Security seat: I ran about 250 command lines through `rail hook guard` with this change's engine and origin/main's, then through real bash with stub git/gh, covering cd-following, git -C/--git-dir, push targets, gh repository naming, wrappers, keywords, redirections and the --owner ask. I also read the save, provision, machine-hook and contract-merged paths in the diff. One regression against main's guard was found (a reassigned $PWD); the earlier findings F10\u2013F40 did not reproduce in the cases I retried.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 268,
+          "claim": "`_expand` now fills `$PWD` with the directory the guard believes the shell is in, but the command itself can reassign PWD. `cd /other/repo && PWD=<this worktree> && cd $PWD && gh pr merge 5` (also `git push origin HEAD:main` and `git push -f origin x`) passes, and bash runs it in this project; main's engine denies all three.",
+          "check": "Add to the bash differential matrix (test_what_bash_really_runs_is_denied) a shape `cd OTHER && PWD=WORK && cd $PWD && <denied command>`, and treat `$PWD` as unknown once any word of the command assigns PWD or HOME.",
+          "evidence": {
+            "command": "python3 cmp.py c4.json  (each command through `rail hook guard` with this change's engine and origin/main's, RAIL_CLOUD=0, cwd = the ticket worktree; then bash -c with stub git/gh). S/other is a scratch git repository, R is /home/user/throw-away-repo.",
+            "output": "new=pass old=deny 'cd S/other && PWD=R/.claude/worktrees/9 && cd $PWD && gh pr merge 5'\n     bash=['RAN: gh pr merge 5 [GH_REPO=unset GIT_DIR=unset pwd=R/.claude/worktrees/9]']\nnew=pass old=deny 'cd S/other && PWD=R/.claude/worktrees/9 && cd $PWD && git push origin HEAD:main'\n     bash=['RAN: git push origin HEAD:main [GH_REPO=unset GIT_DIR=unset pwd=R/.claude/worktrees/9]']\nnew=pass old=deny 'cd S/other && PWD=R/.claude/worktrees/9 && cd $PWD && git push -f origin x'\n     bash=['RAN: git push -f origin x [... pwd=R/.claude/worktrees/9]']"
+          },
+          "id": "F42"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 253,
+          "claim": "Several forms still run a denied command in this project and pass, on main's engine as well: a reassigned HOME (`HOME=<worktree>; cd /other && cd ~ && git push -f origin x`), a git option with a value between two `-C` (`git -C /other --namespace x -C <worktree> push -f origin x`), `env -S 'git push -f origin x'`, `coproc git push -f origin x`, and `cd /other && true & git push -f origin x`. From another repository, `git push -f file:///home/user/throw-away-repo x` and `git push -f https://github.com:443/timur-makarov/throw-away-repo x` also pass.",
+          "evidence": {
+            "command": "python3 cmp.py c2.json / c3.json / c4.json  (same three-way comparison)",
+            "output": "new=pass old=pass 'HOME=R/.claude/worktrees/9 ; cd S/other && cd ~ && git push -f origin x'  bash=['RAN: git push -f origin x [... pwd=R/.claude/worktrees/9]']\nnew=pass old=pass 'git -C S/other --namespace x -C R/.claude/worktrees/9 push -f origin x'  bash=['RAN: ... pwd=R/.claude/worktrees/9]']\nnew=pass old=pass \"env -S 'git push -f origin x'\"  bash=['RAN: git push -f origin x [... pwd=R/.claude/worktrees/9]']\nnew=pass old=pass 'coproc git push -f origin x'  bash=['RAN: git push -f origin x ...']\nnew=pass old=pass 'cd S/other && true & git push -f origin x'  bash=['RAN: git push -f origin x [... pwd=R/.claude/worktrees/9]']\nnew=pass old=pass 'cd S/other && git push -f file:///home/user/throw-away-repo x'\nnew=pass old=pass 'cd S/other && git push -f https://github.com:443/timur-makarov/throw-away-repo x'"
+          },
+          "id": "F43"
+        }
+      ]
     }
   ]
 }
