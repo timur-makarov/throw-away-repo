@@ -1119,7 +1119,9 @@ def save_work(project, f, via):
     inside = [c for c in inside if c not in secret]
     outside = [c for c in changes if c not in inside and c not in secret]
     quiet = f.quiet_minutes
-    if not inside and quiet is not None and quiet < project.config["claim"]["save_minutes"]:
+    if not inside and (f.shipped or (quiet is not None and quiet < project.config["claim"]["save_minutes"])):
+        # Nothing to save. Once the work has shipped, the commit the ship pushed has to stay the pull request's
+        # head until the work changes: its check is the one that counts, and a [skip ci] commit never gets one.
         return None
     if inside:
         # [skip ci]: GitHub starts no workflow for it. The check that counts runs on the commit a ship pushes.

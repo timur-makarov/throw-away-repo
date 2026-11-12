@@ -35,7 +35,8 @@ sessions that the ticket is alive. Where no hook runs, the brief asks the agent 
 A save is pushed before `verify` runs, the project's secret scan included, so it leaves out a file whose
 name says it holds secrets (`.env`, `*.pem`, `*.key`, an SSH key) and says so; the ship commits it after
 `verify`, or `.gitignore` keeps it out for good.
-Saves carry `[skip ci]`; the commit a ship pushes is the one CI checks. With GitHub reachable, `next` also takes in issues labelled
+Saves carry `[skip ci]`; the commit a ship pushes is the one CI checks, so a save with no changed file
+leaves a shipped ticket's branch alone. With GitHub reachable, `next` also takes in issues labelled
 `rail` and labels every wait `rail:needs-you`.
 
 ## What advance does
