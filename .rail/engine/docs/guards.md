@@ -50,11 +50,16 @@ points away from it.
 **It reads the command that runs.** A command after a shell keyword (`then git push -f`, `{ cd -; ... }`),
 behind a wrapper (`sudo -u root`, `env`, `timeout 60`, `xargs`, `nice`) or given by its path
 (`/usr/bin/git`) is read as that command. So are the commands a line hands to a shell: `bash -c "..."`,
-`eval ...`, `$(...)`, backticks, `<(...)`, and a here-document fed to a shell (`bash <<EOF`). Text is not
-a command: a commit message or a pull request body that mentions `git push -f`, quoted over several lines
-or in a here-document, runs nothing and is left alone; neither does a comment. A script file is not read,
-and neither is a `case` arm or a command another program runs (`find -exec`, `make`): the ruleset on GitHub
-is what holds there.
+`eval ...`, `$(...)`, backticks and `<(...)`. A script file is not read, and neither is a `case` arm or a
+command another program runs (`find -exec`, `make`): the ruleset on GitHub is what holds there.
+
+**Every line of a command is read as a command.** The guard doesn't parse the shell, so it can't tell
+text from commands for certain, and a line it took for text by mistake would run unjudged. So a line that
+starts with a denied command is denied wherever it stands: in a here-document, inside quotes, after a
+comment sign. The price is a false deny when a commit message or a pull request body has such a line. The
+answer says so; reword the line, or pass the message from a file (`git commit -F FILE`,
+`gh pr create --body-file FILE`). A command named anywhere else in a line is left alone, and so are
+backticks in a here-document with a quoted delimiter (`<<'EOF'`), which is how a message should be passed.
 
 **A repository's hooks and permission rules load only in a session that starts with that one
 repository.** For a cloud session with several repositories, or a project thread, `rail provision` writes

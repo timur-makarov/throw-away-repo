@@ -1123,8 +1123,10 @@ def save_work(project, f, via):
         return None
     if inside:
         # [skip ci]: GitHub starts no workflow for it. The check that counts runs on the commit a ship pushes.
-        gitx.stage(t.worktree, inside)
-        gitx.git(["commit", "--quiet", "-m", f"{t.id}: save work in progress [skip ci]", "--", *inside], t.worktree)
+        recorded = gitx.stage(t.worktree, inside)
+        if recorded:
+            gitx.git(["commit", "--quiet", "-m", f"{t.id}: save work in progress [skip ci]", "--",
+                      *gitx.literal(recorded)], t.worktree)
     pushed = project.append_events(t, [event(t.id, "saved", via=via, files=len(inside))], "save [skip ci]")
     return inside, outside, secret, pushed
 

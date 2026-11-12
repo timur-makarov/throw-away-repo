@@ -30,13 +30,18 @@ SEPARATORS = {";", "&&", "||", "|", "&", "|&"}
 def _tokens(part):
     """One line's shell tokens. shlex keeps a run of punctuation together, so `);` and `)&&` come as one token:
     parentheses are split off, or the operator next to them would be missed."""
-    lexer = shlex.shlex(part, posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    lexer.commenters = ""  # _lines took the comments out; to shlex a # inside a word (a#b, a URL's #fragment) is one too
+    def lex(text):
+        lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        lexer.commenters = ""  # to shlex a # inside a word (a#b, a URL's #fragment) starts a comment; to the shell it doesn't
+        return list(lexer)
+
     try:
-        tokens = list(lexer)
-    except ValueError:  # an unclosed quote: judge the words we have
-        tokens = part.split()
+        tokens = lex(part)
+    except ValueError:
+        # An unclosed quote or a backslash at the end: the line is part of something longer. Its words are judged
+        # with the quotes taken out, so `bash -c 'git push -f` and `git push -f origin x'` are still read.
+        tokens = lex(re.sub(r"['\"\\]", " ", part))
     found = []
     for token in tokens:
         if token and set(token) <= set("();<>|&") and set(token) & set("()"):
@@ -46,107 +51,55 @@ def _tokens(part):
     return found
 
 
-# A line that hands its here-document to a shell: bash <<EOF, cat <<EOF | sudo bash.
-FEEDS_SHELL = re.compile(r"(?:^|[|;&(`]\s*)(?:(?:\S+=\S*|sudo|env|exec|command|time|nohup)\s+(?:-\S+\s+)*)*"
-                         r"(?:\S*/)?(?:sh|bash|zsh|dash|ksh)\b")
+def _readings(text):
+    """The texts to judge for one command: as written, and with each backslash before a newline taken out, which
+    is how the shell joins two lines. Both are judged: a backslash that ends a comment joins nothing."""
+    joined = text.replace("\\\n", "")
+    return [text] if joined == text else [text, joined]
 
 
 def _lines(text):
-    """A command text in the command lines the shell reads, each with whether it runs in a child shell.
+    """A command text as the lines to judge, each with whether it runs in a child shell.
 
-    A newline inside quotes or a substitution doesn't end a line, and a backslash before a newline joins two: a
-    commit message that mentions `git push -f` is not a push. A here-document's body is data and is left out,
-    unless its line hands it to a shell (`bash <<EOF`): then its lines are commands of a child shell. So are the
-    command lines inside $(...) and backticks, which come first.
+    Every line is judged as a command line of its own, whatever quotes or here-documents surround it. The guard
+    doesn't parse the shell, so it can't tell text from commands for certain, and a line it took for text by
+    mistake would run unjudged. The price is a false deny when a message has a line that starts with a denied
+    command. The command lines inside $(...), <(...), >(...) and backticks are judged too, quoted or not.
     """
-    try:
-        return _scan(text)
-    except Exception:  # judge more than the shell runs, never less
-        return [(part, False) for part in text.splitlines()]
+    rows = text.split("\n")
+    # Substitutions are looked for everywhere but in the body of a here-document with a quoted delimiter, which the
+    # shell takes letter for letter: a message there may name `a command` in backticks. Its rows are still judged.
+    code, i = list(rows), 0
+    while i < len(rows):
+        quoted = re.search(r"<<(-?)[ \t]*(['\"])(\w+)\2(?=[\s);|>&]|$)", rows[i])
+        i += 1
+        if quoted:
+            ends = [k for k in range(i, len(rows)) if (rows[k].lstrip("\t") if quoted.group(1) else rows[k]) == quoted.group(3)]
+            if ends:
+                code[i:ends[0]] = [""] * (ends[0] - i)
+                i = ends[0] + 1
+    found = [(row, True) for inner in _substituted("\n".join(code)) for row in inner.split("\n")]
+    found += [(row, False) for row in rows]
+    return [(row, child) for row, child in found if row.strip()]
 
 
-def _scan(text):
-    lines, nested, current = [], [], []
-    stack = []  # the substitutions that are open: (closing mark, the quote and parentheses outside, where it starts)
-    quote, parens = None, 0  # at this level: the open quote, and the open plain parentheses
-    waiting, row_start = [], 0  # here-documents whose body starts after this row: (delimiter, strip tabs, a script)
-    i, n = 0, len(text)
-
-    def close():
-        nonlocal quote, parens
-        mark, quote, parens, start = stack.pop()
-        nested.extend(part for part, child in _scan("".join(current[start:])) if not child)
-
-    while i < n:
-        c = text[i]
-        if c == "\n":
-            i += 1
-            for word, strip, script in waiting:
-                rows = text[i:].split("\n")
-                ends = [k for k, row in enumerate(rows) if (row.lstrip("\t") if strip else row) == word]
-                if not ends:
-                    continue  # no end in sight, so no here-document: what follows is read as commands
-                if script:
-                    nested.extend(part for part, child in _scan("\n".join(rows[:ends[0]])))
-                i = min(i + sum(len(row) + 1 for row in rows[:ends[0] + 1]), n)
-            waiting, row_start = [], i
-            if quote is None and not stack:
-                lines.append("".join(current))
-                current = []
-            else:
-                current.append("\n")
-            continue
-        if quote == "'":
-            quote = None if c == "'" else quote
-        elif quote == "$'":  # $'...': a backslash escapes the next character, a quote included
-            if c == "\\" and i + 1 < n:
-                current.append(text[i:i + 2])
-                i += 2
-                continue
-            quote = None if c == "'" else quote
-        elif quote is None and c == "#" and text[i - 1:i] in ("", " ", "\t", "\n", ";", "&", "|", "(", "`"):
-            end = text.find("\n", i)  # a comment: nothing in it is a quote, a here-document or a command
-            i = n if end < 0 else end
-            continue
-        elif c == "\\" and i + 1 < n:
-            if text[i + 1] != "\n":  # a backslash before a newline joins the two lines
-                current.append(text[i:i + 2])
+def _substituted(text):
+    """What stands inside each $(...), <(...), >(...) and pair of backticks, the nested ones too."""
+    found, opened, i = [], [], 0
+    while i < len(text):
+        if text.startswith(("$(", "<(", ">("), i):
+            opened.append(i + 2)
             i += 2
             continue
-        elif c == '"':
-            quote = None if quote == '"' else '"'
-        elif c == "'" and quote is None:
-            quote = "$'" if text[i - 1:i] == "$" else "'"
-        elif c == "`" and stack and stack[-1][0] == "`" and quote is None:
-            close()
-        elif c == "`" or text.startswith("$(", i) or (quote is None and text.startswith(("<(", ">("), i)):
-            current.append("`" if c == "`" else text[i:i + 2])  # $(...), and <(...) and >(...), run commands too
-            stack.append(("`" if c == "`" else ")", quote, parens, len(current)))
-            quote, parens = None, 0
-            i += len(current[-1])
-            continue
-        elif quote is None and c == "(" and stack:
-            parens += 1
-        elif quote is None and c == ")" and stack and stack[-1][0] == ")":
-            if parens:
-                parens -= 1
-            else:
-                close()
-        elif quote is None and text.startswith("<<", i) and not text.startswith("<<<", i) and text[i - 1:i] != "<" \
-                and "((" not in text[row_start:i]:  # in arithmetic, << shifts: no body follows, so nothing is left out
-            strip = text.startswith("<<-", i)
-            m = re.match(r"[ \t]*(?:'([^'\n]*)'|\"([^\"\n]*)\"|([^\s;&|()<>`]+))", text[i + 2 + strip:])
-            if m:
-                end = text.find("\n", i)
-                row = text[row_start:n if end < 0 else end]
-                word = next(g for g in m.groups() if g is not None).replace("\\", "")
-                waiting.append((word, strip, bool(FEEDS_SHELL.search(row))))
-        current.append(c)
+        if text[i] == "(" and opened:
+            opened.append(None)  # a plain parenthesis inside a substitution
+        elif text[i] == ")" and opened:
+            start = opened.pop()
+            if start is not None:
+                found.append(text[start:i])
         i += 1
-    while stack:  # a substitution left open still runs what it has
-        close()
-    lines.append("".join(current))
-    return [(part, True) for part in nested if part.strip()] + [(part, False) for part in lines if part.strip()]
+    found += [text[start:] for start in opened if start is not None]  # left open: the shell runs what it has
+    return found + text.split("`")[1::2]
 
 
 def pipelines(line, unwrap=True, depth=0):
@@ -235,7 +188,7 @@ def _script(words, depth=0):
         i = 1
         while i < len(words) and words[i].startswith(("-", "+")):
             if words[i].startswith("-") and not words[i].startswith("--") and "c" in words[i]:
-                return words[i + 1] if i + 1 < len(words) else None
+                return " ".join(words[i + 1:]) or None  # with its arguments: a quote left open splits the script
             i += 2 if words[i] in ("-o", "+o", "-O", "+O") else 1
     return None
 
@@ -492,7 +445,20 @@ def _gh_named(raw, words):
 
 
 def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
-    """Why a command line is denied, or None.
+    """Why a command is denied, or None. It is judged as written and with its continued lines joined."""
+    for reading in _readings(line):
+        reason = _deny(reading, base, branch, cwd, locate, repo, cloud)
+        if reason:
+            return reason + (MESSAGE_HINT if "\n" in line.strip() else "")
+    return None
+
+
+MESSAGE_HINT = (". Every line of a command is read as a command. If the line this is about is text in a message,"
+                " reword it or pass the message from a file (git commit -F FILE)")
+
+
+def _deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
+    """Why one reading of a command is denied, or None.
 
     The git and gh rules protect this project's branches. With `cwd` and `locate`, a command that clearly runs in
     another repository (after `cd DIR &&`, or with git -C) is left alone: locate(directory) answers (ours, the
@@ -581,7 +547,16 @@ def _outside(target, cwd, top):
 
 
 def ask(line, cwd, top, cloud=False):
-    """Why the person should answer before a command runs, or None.
+    """Why the person should answer before a command runs, or None. Judged like deny: every reading."""
+    for reading in _readings(line):
+        reason = _ask(reading, cwd, top, cloud)
+        if reason:
+            return reason
+    return None
+
+
+def _ask(line, cwd, top, cloud=False):
+    """Why the person should answer before one reading of a command runs, or None.
 
     `rail answer --owner` records a person's decision, so it asks everywhere. The rest protects a person's own
     machine and work: in a cloud session the VM is disposable and an ask would only stop an unattended run.

@@ -152,20 +152,41 @@ def worktrees(cwd):
 
 
 def dirty(cwd, exclude=()):
-    """Uncommitted paths in a worktree, untracked files included. A staged rename is both of its names: the old
-    one is a deletion."""
+    """Uncommitted paths in a worktree, untracked files included, as git names them (-z: no quoting, so a name
+    may hold a quote or an arrow). A staged rename is both of its names: the old one is a deletion."""
     spec = ["--", "."] + [f":(exclude){p}" for p in exclude]
-    lines = git(["status", "--porcelain", "--untracked-files=all", *spec], cwd).stdout.splitlines()
-    return [name.strip('"') for line in lines for name in line[3:].split(" -> ")]
+    fields = git(["status", "--porcelain", "-z", "--untracked-files=all", *spec], cwd).stdout.split("\0")
+    paths, i = [], 0
+    while i < len(fields):
+        entry = fields[i]
+        i += 1
+        if len(entry) < 4:
+            continue
+        paths.append(entry[3:])
+        if "R" in entry[:2] or "C" in entry[:2]:  # the name it was renamed or copied from comes next
+            if i < len(fields) and fields[i]:
+                paths.append(fields[i])
+            i += 1
+    return paths
+
+
+def literal(paths):
+    """Paths as pathspecs that mean exactly these files, whatever characters their names hold."""
+    return [f":(literal){path}" for path in paths]
 
 
 def stage(cwd, paths):
-    """git add -A for these paths. A deletion that is staged already (git rm, the old name of a git mv) is passed
-    over: it is on disk and in the index no more, and git stops at a path it can't find."""
-    tracked = set(out(["ls-files", "--cached", "-z", "--", *paths], cwd).split("\0"))
+    """git add -A for these paths. Returns the ones among them a commit would now record.
+
+    A deletion that is staged already (git rm, the old name of a git mv) is passed over: it is on disk and in the
+    index no more, and git stops at a path it can't find. A file that was staged and then deleted leaves nothing
+    to record at all."""
+    tracked = set(git(["ls-files", "--cached", "-z", "--", *literal(paths)], cwd).stdout.split("\0"))
     left = [p for p in paths if p in tracked or os.path.lexists(os.path.join(cwd, p))]
     if left:
-        git(["add", "-A", "--", *left], cwd)
+        git(["add", "-A", "--", *literal(left)], cwd)
+    recorded = git(["diff", "--cached", "--name-only", "--no-renames", "-z", "HEAD", "--", *literal(paths)], cwd).stdout
+    return [path for path in recorded.split("\0") if path]
 
 
 def push(cwd, remote, refspec, force_with_lease=None):
