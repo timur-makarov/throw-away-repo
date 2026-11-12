@@ -774,6 +774,43 @@
       "cost_usd": 3.211056399999999,
       "summary": "No new findings. I ran the six Done Contract checks (all pass, in cloud and own-machine mode) and confirmed `.rail/engine`, `.rail/packs` and `.rail/ruleset.json` are byte-identical to the framework at the `.rail/SOURCE` commit, with the settings rules, workflow and AGENTS.md matching its seed. The framework's own 167 tests pass on that engine, a fresh-clone `rail ci` at the shipped head passes every step up to the review, and about 50 everyday and malformed commands through the guard and hooks gave no wrong deny, ask or crash. The earlier fixes are present in the copied code; F28 stays declined as designed, since `docs/loop.md` now states that behaviour.",
       "findings": []
+    },
+    {
+      "run": 23,
+      "role": "security",
+      "patch_id": "836f1a7a91cd2ccaaa82d0db7136983d721310f2",
+      "head": "823e2ab5a6cd",
+      "tier": "HIGH",
+      "at": "2026-11-12T19:30:31Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.1085844,
+      "summary": "Ran about 250 commands through `rail hook guard` with this change's engine and origin/main's (RAIL_CLOUD=0, cwd = the ticket worktree), and ran the differing ones in real bash with stub git and gh. One regression: a `cd` behind a shell keyword or inside braces is followed even when the shell never runs it. I also read the save, provision, machine-hook, contract-merge and CI paths and found nothing else to report; F10\u2013F12, F19\u2013F25, F30\u2013F33 and F36\u2013F38 stay fixed for the inputs I retried.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 552,
+          "claim": "The new KEYWORDS unwrapping makes a `cd DIR &&` behind `then`, `do`, `else` or `{` count as followed, though the shell may never run it. `if false; then cd /tmp && true; fi; git push -f origin x` (also `git push origin HEAD:main`, `gh pr merge 5`, the `while false; do ...; done` form and `false && { cd /tmp && true; }; ...`) passes the guard while bash runs the command in this project; main's engine denies all of them.",
+          "check": "Add these lines to the bash differential matrix (test_what_bash_really_runs_is_denied): a `cd /tmp && true` inside `if false; then ...; fi`, `while false; do ...; done`, `until true; do ...; done` and `false && { ...; }`, each followed by `; git push -f origin x` and `; gh pr merge 5`. A cd after a keyword or inside braces should leave `here` unknown.",
+          "evidence": {
+            "command": "python3 cmp.py c3.json  (each command through `rail hook guard` with this change's engine and origin/main's, RAIL_CLOUD=0, cwd = the ticket worktree; then bash -c with stub git/gh on PATH)",
+            "output": "new=pass  old=deny  'if false; then cd /tmp && true; fi; git push -f origin x'\nnew=pass  old=deny  'if false; then cd /tmp && true; fi; git push origin HEAD:main'\nnew=pass  old=deny  'if false; then cd /tmp && true; fi; gh pr merge 5'\nnew=pass  old=deny  'while false; do cd /tmp && true; done; git push -f origin x'\nnew=pass  old=deny  'until true; do cd /tmp && true; done; git push -f origin x'\nnew=pass  old=deny  '[ -d /nonexistent ] && { cd /tmp && true; }; git push -f origin x'\nnew=pass  old=deny  'false && { cd /tmp && true; }; git push -f origin x'\nBASH\n'if false; then cd /tmp && true; fi; git push origin HEAD:main' -> ['RAN: git push origin HEAD:main [pwd=/home/user/throw-away-repo/.claude/worktrees/9]']\n'if false; then cd /tmp && true; fi; gh pr merge 5' -> ['RAN: gh pr merge 5 [pwd=/home/user/throw-away-repo/.claude/worktrees/9]']\n'while false; do cd /tmp && true; done; git push -f origin x' -> ['RAN: git push -f origin x [pwd=/home/user/throw-away-repo/.claude/worktrees/9]']\n'false && { cd /tmp && true; }; git push -f origin x' -> ['RAN: git push -f origin x [pwd=/home/user/throw-away-repo/.claude/worktrees/9]']"
+          },
+          "id": "F40"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 279,
+          "claim": "A `cd DIR &&` that a short-circuit skips is still followed: `false && cd /tmp && true; git push origin HEAD:main` and `if true; then :; else cd /tmp && true; fi; gh api -X PUT repos/{owner}/{repo}/pulls/5/merge` pass, and bash runs the push and the merge in this project. Main's engine passes both as well, and also passes a merge through `gh api graphql` (mergePullRequest).",
+          "check": "In the bash differential matrix: `false && cd /tmp && true; <denied command>`; a cd should be believed only when it is the first command of its && chain.",
+          "evidence": {
+            "command": "python3 cmp.py c2.json / c3.json  (same three-way comparison)",
+            "output": "new=pass  old=pass  'false && cd /tmp && true; git push origin HEAD:main'\nnew=pass  old=pass  'if true; then :; else cd /tmp && true; fi; gh api -X PUT repos/{owner}/{repo}/pulls/5/merge'\nBASH -> ['RAN: gh api -X PUT repos/{owner}/{repo}/pulls/5/merge [pwd=/home/user/throw-away-repo/.claude/worktrees/9]']\nnew=pass  old=pass  \"gh api graphql -f query='mutation{mergePullRequest(input:{pullRequestId:\\\"x\\\"}){clientMutationId}}'\""
+          },
+          "id": "F41"
+        }
+      ]
     }
   ]
 }
