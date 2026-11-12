@@ -255,6 +255,43 @@
           "id": "F13"
         }
       ]
+    },
+    {
+      "run": 9,
+      "role": "review",
+      "patch_id": "1eb6e696d869d4d7843088a38a3a5536574afac4",
+      "head": "ceb59271a816",
+      "tier": "HIGH",
+      "at": "2026-11-12T17:12:05Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.0229662000000004,
+      "summary": "All six Done Contract checks pass, the vendored engine, pack and ruleset are byte-identical to the framework at the SOURCE commit (settings rules match the seed), and the framework's own 157 tests pass at that commit. I also probed the guard with about 40 command lines, re-derived this repository's tickets with the new engine, and simulated the new save hooks; F1 to F9 no longer reproduce, and one new advisory and one parked finding remain.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".claude/settings.json",
+          "line": 93,
+          "claim": "The PostToolUse throttle looks for its stamp under `$CLAUDE_PROJECT_DIR/.git/rail/cache/pulse/`, but `rail hook pulse` writes it to the git common directory. In a session whose project directory is a git worktree (`.git` is a file there), the stamp is never found, so the pulse hook runs a fetch and a save after every tool call instead of at most every ten minutes, and commits and pushes in-scope changes each time.",
+          "check": "A test that runs the PostToolUse command from settings.json twice with CLAUDE_PROJECT_DIR set to a linked worktree and asserts the second call is skipped.",
+          "evidence": {
+            "command": "In the ticket's worktree (`.git` is `gitdir: /home/user/throw-away-repo/.git/worktrees/9`), with CLAUDE_PROJECT_DIR=$PWD and CLAUDE_CODE_SESSION_ID=probe-sess: ran the hook's own test `[ -n \"$(find \"$CLAUDE_PROJECT_DIR/.git/rail/cache/pulse/${CLAUDE_CODE_SESSION_ID:-any}\" -mmin -10 2>/dev/null)\" ]` and, when it failed, `rail hook pulse`, twice in a row; then `ls /home/user/throw-away-repo/.git/rail/cache/pulse/`",
+            "output": "call 1: pulse hook runs\ncall 2: pulse hook runs\nprobe-sess"
+          },
+          "id": "F14"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 456,
+          "claim": "The guard reads `GH_REPO` only as a prefix on the `gh` command itself, not when it is exported earlier in the line. So `cd OTHER_REPO && export GH_REPO=timur-makarov/throw-away-repo && gh pr merge 5` merges this project's pull request and is allowed; the engine on main allows it too, so this change did not cause it (an exported `GIT_DIR` is now followed, `GH_REPO` is not).",
+          "check": "A guard test case: after `cd OTHER &&`, `export GH_REPO=<this repo> && gh pr merge 5` must be denied.",
+          "evidence": {
+            "command": "Piped each line to `RAIL_CLOUD=0 <engine>/bin/rail hook guard` as a Bash PreToolUse event with cwd set to the ticket's worktree, first with main's engine, then with this branch's; OTHER is another git repository on branch main.",
+            "output": "main:   allow <= cd OTHER && export GH_REPO=timur-makarov/throw-away-repo && gh pr merge 5\nmain:   allow <= export GH_REPO=timur-makarov/throw-away-repo; cd OTHER && gh pr merge 5\nbranch: allow <= cd OTHER && export GH_REPO=timur-makarov/throw-away-repo && gh pr merge 5\nbranch: allow <= export GH_REPO=timur-makarov/throw-away-repo; cd OTHER && gh pr merge 5\nbranch: \"permissionDecision\": \"deny\" <= cd OTHER && GH_REPO=timur-makarov/throw-away-repo gh pr merge 5"
+          },
+          "id": "F15"
+        }
+      ]
     }
   ]
 }
