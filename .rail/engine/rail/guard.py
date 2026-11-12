@@ -71,7 +71,7 @@ def _lines(text):
     # shell takes letter for letter: a message there may name `a command` in backticks. Its rows are still judged.
     code, i = list(rows), 0
     while i < len(rows):
-        quoted = re.search(r"<<(-?)[ \t]*(['\"])(\w+)\2(?=[\s);|>&]|$)", rows[i])
+        quoted = re.search(r"(?<!<)<<(?!<)(-?)[ \t]*(['\"])(\w+)\2(?=[\s);|>&]|$)", rows[i])
         i += 1
         if quoted:
             ends = [k for k in range(i, len(rows)) if (rows[k].lstrip("\t") if quoted.group(1) else rows[k]) == quoted.group(3)]
@@ -79,8 +79,22 @@ def _lines(text):
                 code[i:ends[0]] = [""] * (ends[0] - i)
                 i = ends[0] + 1
     found = [(row, True) for inner in _substituted("\n".join(code)) for row in inner.split("\n")]
-    found += [(row, False) for row in rows]
+    certain = _plain(text)
+    for row in rows:
+        found.append((row, False))
+        if not certain and ("'" in row or '"' in row):
+            # A quote may run from one line to the next here, so the quotes on this line may pair up otherwise
+            # than they look: `b" ; git push -f ; echo "c` is three commands. Its words are judged bare as well.
+            found.append((re.sub(r"['\"]", " ", row), False))
     return [(row, child) for row, child in found if row.strip()]
+
+
+def _plain(text):
+    """Whether every line of a command text is certain to be a command line: it has no here-document, and no
+    line leaves a quote open. Then no line can be the text of a message."""
+    if "<<" in text:
+        return False
+    return not any(len(re.findall(r"(?<!\\)(?:\\\\)*" + mark, row)) % 2 for row in text.split("\n") for mark in "'\"")
 
 
 def _substituted(text):
@@ -142,20 +156,47 @@ def sequence(line, depth=0):
         tokens = _tokens(part)
         grouped = child or any(token and set(token) <= set("()") for token in tokens)
         words = []
-        for token in [*tokens, ""]:
-            if token in SEPARATORS or token == "":
-                command = _unwrap(words)
-                found.append((words, command, token, grouped))
+        for token in [*tokens, None]:  # None ends the line; "" is a word, the empty argument of -m ""
+            if token is None or token in SEPARATORS:
+                command, after = _unwrap(words), token or ""
+                found += [(words, reading, after, grouped) for reading in _variants(command)]
                 inner = sequence(_script(command, depth) or "", depth + 1)
                 if inner and command[0] == "eval":
-                    inner[-1] = (*inner[-1][:2], token, inner[-1][3])
+                    inner[-1] = (*inner[-1][:2], after, inner[-1][3])
                 elif inner:
                     inner = [(*item[:3], True) for item in inner]
                 found += inner
                 words = []
-            elif not set(token) <= set("()"):
+            elif token == "" or not set(token) <= set("()"):
                 words.append(token)
     return [item for item in found if item[1]]
+
+
+def _variants(words):
+    """The readings of one command's words, each of them judged: as written, cut where a trailing comment would
+    start, and without its redirections. The guard can't be sure which the shell takes, and the difference
+    counts: to the shell `git push origin # now` and `git push origin 2>&1` are a bare push, while the words
+    after `origin` would be refspecs."""
+    def cut(ws):
+        return next((ws[:i] for i, w in enumerate(ws) if i and w.startswith("#")), ws)
+
+    def bare(ws):
+        kept, i = [], 0
+        while i < len(ws):
+            if ws[i] and set(ws[i]) <= set("<>&|") and set(ws[i]) & set("<>"):
+                if kept and kept[-1].isdigit():
+                    kept.pop()  # the file descriptor of 2>&1
+                i += 2  # the operator and its target
+            else:
+                kept.append(ws[i])
+                i += 1
+        return kept
+
+    found = []
+    for reading in (words, cut(words), bare(words), bare(cut(words)), [w for w in bare(cut(words)) if w]):
+        if reading and reading not in found:
+            found.append(reading)  # the last one: without empty arguments, which name no refspec either
+    return found
 
 
 def _unwrap(words):
@@ -415,33 +456,44 @@ def _gh_sub(words):
     return found
 
 
-def _gh_named(raw, words):
-    """The repositories a gh command names, lower case: -R and --repo, GH_REPO=, an argument that is a github.com
-    URL, and the endpoint of `gh api`. A URL inside an option's value (--body, -f) names nothing: a merge message
-    that mentions another repository is still a merge here. Neither do repos/{owner}/{repo} and
-    repos/:owner/:repo, which mean the current one."""
-    named = [_repo_name(w.split("=", 1)[1]) for w in raw[:len(raw) - len(words)] if w.startswith("GH_REPO=")]
+def _gh_target(raw, words, repo):
+    """Whose repository a gh command is about: "ours", "other", or None when it names none and where it runs
+    decides. It is another repository's only when every word that names one agrees and nothing points here:
+
+    - this project's OWNER/NAME anywhere in the command, an option's value included, makes it ours;
+    - the hints are GH_REPO= in front of the command, -R and --repo, an argument that is a github.com URL, and for
+      `gh api` every word with repos/OWNER/NAME/ in it;
+    - a hint the guard can't read (a variable), or an api path for the current repository (repos/{owner}/{repo},
+      repos/:owner/:repo) next to other hints, leaves it to where the command runs.
+    """
+    if not repo:
+        return None  # this project's own name isn't known, so no name can be told from it
+    if any(repo in w.lower() for w in raw):
+        return "ours"
+    hints, unsure = [], False
+    assigned = [w.split("=", 1)[1] for w in raw[:len(raw) - len(words)] if w.startswith("GH_REPO=")]
+    if assigned and assigned[-1]:  # the last one counts, as in the shell; an empty one leaves it to the checkout
+        hints.append(assigned[-1])
     for i, w in enumerate(words):
         if w in ("-R", "--repo") and i + 1 < len(words):
-            named.append(_repo_name(words[i + 1]))
+            hints.append(words[i + 1])
         elif w.startswith("--repo="):
-            named.append(_repo_name(w.split("=", 1)[1]))
+            hints.append(w.split("=", 1)[1])
         elif i > 1 and re.match(r"(?:https?://)?(?:www\.)?github\.com/", w) and not words[i - 1].startswith("-") \
                 and _gh_sub(words)[:1] != ["api"]:
-            named.append(_repo_name(re.sub(r"^https?://", "", w)))
+            hints.append(re.sub(r"^https?://", "", w))
     if _gh_sub(words)[:1] == ["api"]:
-        endpoint, i = None, 2
-        while i < len(words) and endpoint is None:
-            if words[i] in GH_API_VALUED:
-                i += 2
-            elif words[i].startswith("-"):
-                i += 1
-            else:
-                endpoint = words[i]
-        m = re.search(r"(?:^|/)repos/([^/]+)/([^/]+)/", endpoint or "")
-        if m and not re.match(r"[{:]", m.group(1)) and not re.match(r"[{:]", m.group(2)):
-            named.append(f"{m.group(1)}/{m.group(2)}".lower())
-    return [n for n in named if n]
+        for w in words[2:]:
+            for m in re.finditer(r"(?:^|[/=])repos/([^/\s]+)/([^/\s]+)/", w):
+                if re.match(r"[{:]", m.group(1)) or re.match(r"[{:]", m.group(2)):
+                    # The current repository: GH_REPO in front of the command says which, or else the checkout.
+                    unsure = unsure or not (assigned and assigned[-1])
+                else:
+                    hints.append(f"{m.group(1)}/{m.group(2)}")
+    names = [_repo_name(hint) for hint in hints]
+    if not hints or unsure or not all(names):
+        return None if all(names) or not hints else "ours"  # a hint that can't be read may well mean this project
+    return "other"
 
 
 def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
@@ -472,9 +524,15 @@ def _deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
     repo = repo.lower() if repo else None
     git_exported = False  # an exported GIT_DIR or GIT_WORK_TREE points every later git command at a repository
     gh_exported = False  # and an exported GH_REPO that names this project points every later gh command at it
-    before = ""  # the operator in front of the command at hand
+    certain = _plain(line)  # every line is a command line for sure: a cd on one line holds for the next
+    moved = False  # a cd, an eval or a sourced file has been seen
+    command, previous, before = None, "", ""  # the command at hand, and the operator in front of it
     for raw, words, operator, grouped in sequence(line):
-        before, previous = operator, before
+        first = raw is not command  # the first reading of this command's words
+        if first:
+            if before == "" and moved and not certain:
+                here = None  # a new line, and the cd before it may have stood in a message: it proves nothing
+            command, previous, before = raw, before, operator
         if words[0] in ("export", "declare", "typeset"):
             # These only ever make the guard stricter. An export that names another repository is not believed:
             # it may never reach the command (a pipeline, a child shell, an unset in between).
@@ -490,8 +548,11 @@ def _deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
         if _journal_writes(words):
             return "only the engine writes .rail/journal/; record a finding's answer with rail answer"
         if words[0] in ("cd", "pushd", "popd"):
-            here = _after_cd(words, operator, grouped, here, previous)
+            moved = True
+            if first:  # as written only: a cd is believed when it is plain
+                here = _after_cd(words, operator, grouped, here, previous)
         elif words[0] in ("source", ".") or (words[0] == "eval" and re.search(r"[$`]", " ".join(words[1:]))):
+            moved = True
             here = None  # a file's commands, or words the guard can't read, may move the shell
         elif words[0] == "git":
             sub, args = _git(words)
@@ -518,10 +579,10 @@ def _deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
             elif sub == "merge" and at == base:
                 return f"a merge into {base} goes through the engine: rail advance merges a shipped ticket"
         elif words[0] == "gh":
-            named = _gh_named(raw, words) + ([repo] if gh_exported else [])
-            if named and repo and repo not in named:
-                continue  # it names only other repositories
-            if not named:
+            target = _gh_target(raw, words, repo)
+            if target == "other":
+                continue  # every word that names a repository names another one
+            if target is None and not gh_exported:
                 found = locate(here) if locate and here is not None and not _moved(raw, words) else None
                 if found and not found[0]:
                     continue  # it names none, and it runs in another repository

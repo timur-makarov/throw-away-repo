@@ -41,17 +41,23 @@ auto mode included, which is why `sudo` and the like are asked by the hook and n
 **It protects this project's branches, not every repository.** After `cd DIR &&`, or with `git -C DIR`, a
 command in another repository is left alone. Whatever the guard can't follow (`cd -`, `popd`, a subshell, a
 `cd` before `;` or `||` or after `||`, `--git-dir`, a variable other than `$HOME` and `$PWD`) is judged as
-this project's, and so is what follows a sourced file or an `eval` of words the guard can't read. A `gh`
-merge is judged by the repository it names with `-R`, `GH_REPO=` in front of the command, a pull request URL or
-the endpoint of `gh api`; a URL inside a message (`--body`, `-f`) names nothing. An exported `GIT_DIR` or
-`GH_REPO` only ever makes the guard stricter: it is believed when it points at this project, never when it
-points away from it.
+this project's, and so is what follows a sourced file or an `eval` of words the guard can't read. A `cd` on
+one line holds for the next line only when no line of the command can be text: with a here-document or a
+quote that runs over lines, it holds for its own line.
+
+A `gh` merge is another repository's only when every word that names a repository names another one:
+`GH_REPO=` in front of the command, `-R`, a pull request URL as an argument, the paths of `gh api`. This
+project's name anywhere in the command, an option's value included, makes it this project's; a name the
+guard can't read leaves it to where the command runs. An exported `GIT_DIR` or `GH_REPO` only ever makes
+the guard stricter: it is believed when it points at this project, never when it points away from it.
 
 **It reads the command that runs.** A command after a shell keyword (`then git push -f`, `{ cd -; ... }`),
 behind a wrapper (`sudo -u root`, `env`, `timeout 60`, `xargs`, `nice`) or given by its path
 (`/usr/bin/git`) is read as that command. So are the commands a line hands to a shell: `bash -c "..."`,
-`eval ...`, `$(...)`, backticks and `<(...)`. A script file is not read, and neither is a `case` arm or a
-command another program runs (`find -exec`, `make`): the ruleset on GitHub is what holds there.
+`eval ...`, `$(...)`, backticks and `<(...)`. Each command is judged as written, without a trailing
+`# comment`, and without its redirections: to the shell `git push origin # now` and `git push origin 2>&1`
+are a bare push. A script file is not read, and neither is a `case` arm or a command another program runs
+(`find -exec`, `make`): the ruleset on GitHub is what holds there.
 
 **Every line of a command is read as a command.** The guard doesn't parse the shell, so it can't tell
 text from commands for certain, and a line it took for text by mistake would run unjudged. So a line that

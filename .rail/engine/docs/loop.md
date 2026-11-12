@@ -36,7 +36,9 @@ A save is pushed before `verify` runs, the project's secret scan included, so it
 name says it holds secrets (`.env`, `*.pem`, `*.key`, an SSH key) and says so; the ship commits it after
 `verify`, or `.gitignore` keeps it out for good.
 Saves carry `[skip ci]`; the commit a ship pushes is the one CI checks, so a save with no changed file
-leaves a shipped ticket's branch alone. With GitHub reachable, `next` also takes in issues labelled
+leaves a shipped ticket's branch alone. A claim protects work in flight: a shipped ticket that came back
+(a red check, a review finding) has none until a file changes, so a session that only reads for
+`stale_minutes` may find the ticket taken over, and loses nothing by it. With GitHub reachable, `next` also takes in issues labelled
 `rail` and labels every wait `rail:needs-you`.
 
 ## What advance does
