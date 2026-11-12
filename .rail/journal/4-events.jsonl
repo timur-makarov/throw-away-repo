@@ -1,3 +1,13 @@
 {"v":1,"at":"2026-11-12T11:38:39Z","ticket":"4","event":"accepted","by":"engine","via":"lint","tier":"LOW","contract":"76d7e8f7277c","done":"8ae9b3ce4813","scope_paths":["calc/stats.py","tests/test_stats.py"]}
 {"v":1,"at":"2026-11-12T11:39:02Z","ticket":"4","event":"claimed","session":"session-b","takeover":false}
 {"v":1,"at":"2026-11-12T11:40:08Z","ticket":"4","event":"claimed","session":"session-c","takeover":true}
+{"v":1,"at":"2026-11-12T11:40:38Z","ticket":"4","event":"step","step":"ticket-lint","status":"ran","result":"pass","patch_id":"159436a39d3e5796343681d48abf0cdbf92199dd"}
+{"v":1,"at":"2026-11-12T11:40:38Z","ticket":"4","event":"step","step":"assumptions","status":"ran","result":"pass","patch_id":"159436a39d3e5796343681d48abf0cdbf92199dd"}
+{"v":1,"at":"2026-11-12T11:40:38Z","ticket":"4","event":"step","step":"scope","status":"ran","result":"pass","patch_id":"159436a39d3e5796343681d48abf0cdbf92199dd"}
+{"v":1,"at":"2026-11-12T11:40:38Z","ticket":"4","event":"step","step":"rules","status":"ran","result":"pass","patch_id":"159436a39d3e5796343681d48abf0cdbf92199dd"}
+{"v":1,"at":"2026-11-12T11:40:38Z","ticket":"4","event":"step","step":"size","status":"ran","result":"pass","patch_id":"159436a39d3e5796343681d48abf0cdbf92199dd","detail":"size 17/300"}
+{"v":1,"at":"2026-11-12T11:40:38Z","ticket":"4","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":"159436a39d3e5796343681d48abf0cdbf92199dd"}
+{"v":1,"at":"2026-11-12T11:40:38Z","ticket":"4","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"159436a39d3e5796343681d48abf0cdbf92199dd","detail":"exit 0","duration_ms":96}
+{"v":1,"at":"2026-11-12T11:40:38Z","ticket":"4","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"159436a39d3e5796343681d48abf0cdbf92199dd","detail":"python3 -c \"from calc import stats; assert stats.mean([1, 2, 3]) == 2\"","duration_ms":15}
+{"v":1,"at":"2026-11-12T11:40:38Z","ticket":"4","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"159436a39d3e5796343681d48abf0cdbf92199dd","detail":"python3 -m unittest discover -s tests -q","duration_ms":67}
+{"v":1,"at":"2026-11-12T11:40:38Z","ticket":"4","event":"shipped","patch_id":"159436a39d3e5796343681d48abf0cdbf92199dd","head":"a7abe5e59202","tier":"LOW","size":17}
