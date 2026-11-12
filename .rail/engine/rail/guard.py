@@ -1,4 +1,4 @@
-"""The guard hook (plan, section 15): what depends on a flag or a refspec anywhere in a Bash command.
+"""The guard hook: what depends on a flag or a refspec anywhere in a Bash command.
 
 Guards prevent mistakes; they are not a boundary. Permission rules in .claude/settings.json cover what a rule
 can express, and this hook covers the rest.
@@ -12,18 +12,31 @@ WRAPPERS = {"sudo", "env", "command", "exec", "time", "nohup", "nice"}
 SEPARATORS = {";", "&&", "||", "|", "&", "|&"}
 
 
+def _tokens(part):
+    """One line's shell tokens. shlex keeps a run of punctuation together, so `);` and `)&&` come as one token:
+    parentheses are split off, or the operator next to them would be missed."""
+    lexer = shlex.shlex(part, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        tokens = list(lexer)
+    except ValueError:  # an unclosed quote: judge the words we have
+        tokens = part.split()
+    found = []
+    for token in tokens:
+        if token and set(token) <= set("();<>|&") and set(token) & set("()"):
+            found += re.findall(r"[()]|[^()]+", token)
+        else:
+            found.append(token)
+    return found
+
+
 def pipelines(line, unwrap=True):
     """Each line's pipelines, as lists of simple commands (word lists). ;, &&, || and & end a pipeline; | joins one.
     With unwrap, `sudo`, `env`, VAR=value and the like are dropped from the front of each command."""
     keep = _unwrap if unwrap else (lambda words: words)
     found = []
     for part in line.splitlines():
-        lexer = shlex.shlex(part, posix=True, punctuation_chars=True)
-        lexer.whitespace_split = True
-        try:
-            tokens = list(lexer)
-        except ValueError:  # an unclosed quote: judge the words we have
-            tokens = part.split()
+        tokens = _tokens(part)
         pipeline, words = [], []
         for token in tokens:
             if token in ("|", "|&"):
@@ -45,6 +58,24 @@ def commands(line):
     return [words for pipeline in pipelines(line) for words in pipeline]
 
 
+def sequence(line):
+    """Each simple command as (its words as written, its words unwrapped, the operator after it, whether its line
+    uses parentheses). The operator and the parentheses say whether a `cd` still holds for the next command."""
+    found = []
+    for part in line.splitlines():
+        tokens = _tokens(part)
+        grouped = any(token and set(token) <= set("()") for token in tokens)
+        words = []
+        for token in tokens:
+            if token in SEPARATORS:
+                found.append((words, _unwrap(words), token, grouped))
+                words = []
+            elif not set(token) <= set("()"):
+                words.append(token)
+        found.append((words, _unwrap(words), "", grouped))
+    return [item for item in found if item[1]]
+
+
 def _unwrap(words):
     """Drop `sudo -E`, `env`, VAR=value and the like, so `sudo git push -f` is still a push."""
     while words and (words[0] in WRAPPERS or ("=" in words[0] and not words[0].startswith("-"))):
@@ -63,20 +94,35 @@ def _git(words):
 
 
 def _git_dir(words, here):
-    """The directory a git command runs in: `here`, moved by each -C path. None when it can't be known."""
+    """The directory a git command runs in: `here`, moved by each -C path. None when it can't be known: --git-dir
+    and --work-tree point git at a repository from anywhere."""
     i = 1
-    while here is not None and i < len(words) and words[i].startswith("-"):
+    while i < len(words) and words[i].startswith("-"):
+        if words[i].startswith(("--git-dir", "--work-tree")):
+            return None
         if words[i] == "-C" and i + 1 < len(words):
             here = _known(words[i + 1], here)
-        i += 2 if words[i] in ("-C", "-c", "--git-dir", "--work-tree") else 1
+        i += 2 if words[i] in ("-C", "-c") else 1
     return here
 
 
 def _known(target, here):
-    """A path as the shell would see it, or None when a variable in it can't be expanded."""
-    if here is None or "$" in os.path.expandvars(target):
+    """A path as the shell would see it, or None when it can't be known: a variable that can't be expanded, or a
+    relative path from an unknown place."""
+    expanded = os.path.expanduser(os.path.expandvars(target))
+    if "$" in expanded or (here is None and not os.path.isabs(expanded)):
         return None
-    return _resolve(target, here)
+    return _resolve(target, here or "/")
+
+
+def _after_cd(words, operator, grouped, here):
+    """Where the shell is after a cd, pushd or popd. Only `cd DIR &&` is followed: after ;, ||, & or |, inside
+    parentheses, or with `cd -`, `popd` or a bare `cd`, the shell may be anywhere, so the answer is None and what
+    follows is judged as this project's."""
+    target = words[1] if len(words) == 2 else None
+    if words[0] == "popd" or target is None or target.startswith(("-", "+")) or operator != "&&" or grouped:
+        return None
+    return _known(target, here)
 
 
 # Options that take a value: their value is not a flag or a positional argument.
@@ -211,30 +257,62 @@ def _journal_writes(words):
     return [t for t in targets if ".rail/journal" in t]
 
 
-def _other_repo(words, repo):
-    """Whether a gh command names a repository that isn't this project's: repos/OWNER/NAME/ in an api path, or
-    -R OWNER/NAME. With no known repository of our own, every gh command counts as ours."""
-    if not repo:
-        return False
-    named = [m.group(1) for w in words for m in [re.search(r"(?:^|/)repos/([^/\s]+/[^/\s]+)/", w)] if m]
-    named += [words[i + 1] for i, w in enumerate(words[:-1]) if w in ("-R", "--repo")]
-    named += [w.split("=", 1)[1] for w in words if w.startswith("--repo=")]
-    return bool(named) and all(n.lower().removesuffix(".git") != repo.lower() for n in named)
+GH_API_VALUED = {"-X", "--method", "-H", "--header", "-f", "--raw-field", "-F", "--field", "--input", "-q", "--jq",
+                 "-t", "--template", "--hostname", "-p", "--preview", "--cache"}
 
 
-def deny(line, base, branch, cwd=None, locate=None, repo=None):
-    """Why a command line is denied, or None (plan, section 15).
+def _repo_name(text):
+    """OWNER/NAME from [HOST/]OWNER/NAME, a URL, or an scp-style address; None when it is none of these."""
+    text = re.sub(r"^[a-z+]+://", "", text.strip())
+    text = re.sub(r"^[^/@]*@", "", text).replace(":", "/")
+    parts = [x for x in text.split("/") if x]
+    if len(parts) >= 3 and "." in parts[0]:
+        parts = parts[1:]  # the host
+    if len(parts) < 2:
+        return None
+    return f"{parts[0]}/{parts[1].removesuffix('.git')}".lower()
 
-    The git and gh rules protect this project's branches. With `cwd` and `locate`, a command that runs in another
-    repository (after cd, or with git -C) is left alone: locate(directory) answers (ours, branch there), or None
-    when the directory can't be judged. `repo` is this project's OWNER/NAME on GitHub.
+
+def _gh_named(raw, words):
+    """The repositories a gh command names, lower case: -R and --repo, GH_REPO=, a github.com URL, and the
+    endpoint of `gh api`. repos/{owner}/{repo} and repos/:owner/:repo name the current one, so they name nothing."""
+    named = [_repo_name(w.split("=", 1)[1]) for w in raw if w.startswith("GH_REPO=")]
+    for i, w in enumerate(words):
+        if w in ("-R", "--repo") and i + 1 < len(words):
+            named.append(_repo_name(words[i + 1]))
+        elif w.startswith("--repo="):
+            named.append(_repo_name(w.split("=", 1)[1]))
+        elif "github.com/" in w and not w.startswith("-"):
+            named.append(_repo_name(w[w.index("github.com/"):]))
+    if words[1:2] == ["api"]:
+        endpoint, i = None, 2
+        while i < len(words) and endpoint is None:
+            if words[i] in GH_API_VALUED:
+                i += 2
+            elif words[i].startswith("-"):
+                i += 1
+            else:
+                endpoint = words[i]
+        m = re.match(r"/?repos/([^/]+)/([^/]+)/", endpoint or "")
+        if m and not re.match(r"[{:]", m.group(1)) and not re.match(r"[{:]", m.group(2)):
+            named.append(f"{m.group(1)}/{m.group(2)}".lower())
+    return [n for n in named if n]
+
+
+def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
+    """Why a command line is denied, or None.
+
+    The git and gh rules protect this project's branches. With `cwd` and `locate`, a command that clearly runs in
+    another repository (after `cd DIR &&`, or with git -C) is left alone: locate(directory) answers (ours, the
+    branch there), or None when the directory can't be judged. Whatever can't be followed is judged as ours.
+    `repo` is this project's OWNER/NAME on GitHub. In a cloud session the VM is nobody's machine, so the rule
+    about running a download as code is left to the host.
     """
-    if _downloads_into_interpreter(line):
+    if not cloud and _downloads_into_interpreter(line):
         return "piping a download into a shell runs code nobody has read"
     here = cwd
-    for words in commands(line):
-        if not words:
-            continue
+    repo = repo.lower() if repo else None
+    for raw, words, operator, grouped in sequence(line):
         if _wipes_disk(words):
             return "this command can wipe a disk or a home folder"
         secret = next((w for w in words if _secret(w)), None)
@@ -243,13 +321,22 @@ def deny(line, base, branch, cwd=None, locate=None, repo=None):
                     f" ({', '.join(sorted(SAFE_ENV))} are fine)")
         if _journal_writes(words):
             return "only the engine writes .rail/journal/; record a finding's answer with rail answer"
-        if words[0] in ("cd", "pushd"):  # follow cd through the line: cd ../other && git push is another repository
-            here = _known(words[1] if len(words) > 1 and words[1] != "-" else "~", here)
+        if words[0] in ("cd", "pushd", "popd"):
+            here = _after_cd(words, operator, grouped, here)
         elif words[0] == "git":
             sub, args = _git(words)
             where = _git_dir(words, here)
+            if any(w.startswith(("GIT_DIR=", "GIT_WORK_TREE=")) for w in raw):
+                where = None
             found = locate(where) if locate and where is not None else None
             ours, at = found if found else (True, branch)
+            if sub == "push" and not ours:
+                # A push from another repository can still name this one: by URL, or by its folder.
+                target = next(iter(_positional(args, "push")), "")
+                there = _known(target, where) if "/" in target or target.startswith((".", "~")) else None
+                aimed = locate(there) if locate and there and os.path.isdir(there) else None
+                if (repo and _repo_name(target) == repo and ("/" in target or ":" in target)) or (aimed and aimed[0]):
+                    ours, at = True, ""
             if not ours:
                 continue
             if sub == "push":
@@ -261,9 +348,13 @@ def deny(line, base, branch, cwd=None, locate=None, repo=None):
             elif sub == "merge" and at == base:
                 return f"a merge into {base} goes through the engine: rail advance merges a shipped ticket"
         elif words[0] == "gh":
-            found = locate(here) if locate and here is not None else None
-            if (found and not found[0] and not any("repos/" in w for w in words)) or _other_repo(words, repo):
-                continue
+            named = _gh_named(raw, words)
+            if named and repo and repo not in named:
+                continue  # it names only other repositories
+            if not named:
+                found = locate(here) if locate and here is not None else None
+                if found and not found[0]:
+                    continue  # it names none, and it runs in another repository
             if words[1:3] == ["pr", "merge"]:
                 return "gh pr merge merges outside the engine: rail advance merges a shipped ticket"
             if len(words) > 1 and words[1] == "api" and any("/merge" in w and "/pulls/" in w for w in words[2:]):
@@ -286,8 +377,17 @@ def _outside(target, cwd, top):
     return path != top and not path.startswith(top.rstrip("/") + "/")
 
 
-def ask(line, cwd, top):
-    """Why the person should answer before a command runs, or None (plan, section 15)."""
+def ask(line, cwd, top, cloud=False):
+    """Why the person should answer before a command runs, or None.
+
+    `rail answer --owner` records a person's decision, so it asks everywhere. The rest protects a person's own
+    machine and work: in a cloud session the VM is disposable and an ask would only stop an unattended run.
+    """
+    for words in commands(line):
+        if words and os.path.basename(words[0]) == "rail" and "answer" in words[1:3] and "--owner" in words:
+            return "rail answer --owner records the owner's decision on a finding: that is a person's to make"
+    if cloud:
+        return None
     for pipeline in pipelines(line, unwrap=False):
         for words in pipeline:
             prefix = words[:len(words) - len(_unwrap(words))]  # sudo, env, time, VAR=value and their options
@@ -312,4 +412,3 @@ def ask(line, cwd, top):
             if recursive and outside:
                 return f"rm -r outside the worktree: {', '.join(outside)}"
     return None
-

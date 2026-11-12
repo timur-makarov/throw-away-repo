@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""consult: a different model advises a stuck agent (plan, section 18).
+"""consult: a different model advises a stuck agent.
 
 The engine runs this with a JSON request on stdin and records what it prints. It changes nothing.
 """

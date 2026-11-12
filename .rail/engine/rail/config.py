@@ -1,4 +1,4 @@
-"""`.rail/config.toml`: the whole config surface (plan, section 4), with defaults and type checks."""
+"""`.rail/config.toml`: the whole config surface, with defaults and type checks."""
 
 import copy
 import difflib
@@ -18,15 +18,16 @@ DEFAULTS = {
     "base_branch": "main",
     "auto_tiers": ["LOW", "MEDIUM"],
     "migration_paths": ["**/migrations/**"],
-    "commands": {"setup": "", "verify": "", "timeout_secs": 900},
+    "commands": {"setup": "", "verify": "", "provision": "", "timeout_secs": 900},
     "risk_paths": {
         "HIGH": [".rail/bin/**", ".rail/engine/**", ".rail/config.toml", ".claude/**", ".github/workflows/**"],
         "MEDIUM": [],
     },
     "size": {"LOW": 300, "MEDIUM": 600, "exclude": []},
-    "review": {"command": REVIEW_COMMAND},
+    "review": {"command": REVIEW_COMMAND, "model": ""},
     "retry": {"budget": 2},
-    "consult": {"command": "claude -p --safe-mode --tools Read,Grep,Glob"},
+    "consult": {"command": "claude -p --safe-mode --tools Read,Grep,Glob", "model": ""},
+    "claim": {"stale_minutes": 30, "save_minutes": 10},
     "sweep": {"after": 20},
     "map": {"depth": 1, "ignore": []},
     "rules": [],

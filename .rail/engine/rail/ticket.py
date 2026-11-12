@@ -1,4 +1,4 @@
-"""Ticket files: TOML front matter between '+++' lines, then markdown sections (plan, section 5)."""
+"""Ticket files: TOML front matter between '+++' lines, then markdown sections."""
 
 import difflib
 import hashlib
@@ -93,7 +93,7 @@ class Ticket:
         return hashlib.sha256(" ".join(self.sections.get("Done Contract", "").split()).encode()).hexdigest()[:12]
 
     def contract_hash(self):
-        """SPEC section 3: SHA-256 of the Done Contract and the sorted scope_paths, whitespace normalised."""
+        """SHA-256 of the Done Contract and the sorted scope_paths, whitespace normalised."""
         done = " ".join(self.sections.get("Done Contract", "").split())
         text = done + "\n" + "\n".join(sorted(self.scope))
         return hashlib.sha256(text.encode()).hexdigest()[:12]

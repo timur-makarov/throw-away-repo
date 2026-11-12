@@ -1,4 +1,4 @@
-"""The sweep (plan, section 12): it reviews what shipped without a review, and its output is tickets, never edits.
+"""The sweep: it reviews what shipped without a review, and its output is tickets, never edits.
 
 A sweep is itself a LOW ticket. Its squash commit carries a `Sweep:` trailer, which marks where the next one starts.
 """
@@ -24,7 +24,9 @@ reviewers proposed are below: report a parked one again when it is real, and gro
 def unreviewed(project):
     """(start, commits): the commits on base since the last Sweep: commit that had no review: Tier: LOW, or no ticket."""
     base = project.base_ref
-    log = gitx.out(["log", base, "--format=%H%x1f%B%x1e"], project.root)
+    # --first-parent: what landed on the base branch, one entry each. A merge commit counts once, as the change it
+    # brought, and the commits inside it are not counted again.
+    log = gitx.out(["log", "--first-parent", base, "--format=%H%x1f%B%x1e"], project.root)
     found, start = [], None
     for entry in log.split("\x1e"):
         if "\x1f" not in entry:
@@ -39,7 +41,7 @@ def unreviewed(project):
             found.append((sha, ticket.group(1) if ticket else None))
     if start is None:
         # The first sweep starts where Rail was set up: work from before then was never on the rail.
-        setup = gitx.out(["log", base, "--diff-filter=A", "--format=%H", "--", ".rail/config.toml"],
+        setup = gitx.out(["log", "--first-parent", base, "--diff-filter=A", "--format=%H", "--", ".rail/config.toml"],
                          project.root).splitlines()
         start = setup[-1] if setup else ""
         shas = [sha for sha, _ in found]
@@ -110,8 +112,8 @@ def brief(project, commits, parked, checks):
 
     diffs = []
     for sha, nn in commits:
-        diffs.append(gitx.out(["show", "--no-color", "--format=commit %h %s", sha, "--", ".",
-                               ":(exclude).rail/tickets", ":(exclude).rail/journal"], project.root))
+        diffs.append(gitx.out(["show", "--no-color", "--diff-merges=first-parent", "--format=commit %h %s", sha, "--",
+                               ".", ":(exclude).rail/tickets", ":(exclude).rail/journal"], project.root))
     parts = [
         "# Sweep brief", "", "This run's job: sweep the changes below, which merged without a review.", "",
         "## The changes", "```diff", "\n\n".join(diffs), "```", "",

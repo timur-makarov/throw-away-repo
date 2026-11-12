@@ -4,6 +4,7 @@ import os
 import subprocess
 import tempfile
 
+from . import util
 from .util import RailError
 
 _ENV = {"GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"}
@@ -16,7 +17,46 @@ class GitError(RailError):
         self.result = result
 
 
+# One command derives a ticket's state several times, and each derivation asks git the same questions. The answers
+# to questions about refs and objects are kept until something can have changed them: any other git command, or a
+# shell command. Questions about a working tree's files (status, a diff against the files) are always asked again.
+_READS = {"rev-parse", "for-each-ref", "log", "ls-tree", "merge-base", "symbolic-ref", "check-attr", "patch-id",
+          "remote", "cat-file"}
+_answers = {}
+
+
+def forget():
+    _answers.clear()
+
+
+util.AFTER_SHELL.append(forget)
+
+
+def _reads_only(args):
+    """Whether a git command only reads refs and objects, so its answer holds until the repository changes."""
+    sub = args[0] if args else ""
+    if sub in _READS:
+        return sub != "remote" or len(args) == 1
+    if sub == "config":
+        return "--get" in args
+    if sub == "worktree":
+        return args[1:2] == ["list"]
+    if sub == "diff":
+        return any("..." in a for a in args)  # between two refs; without them it reads the working tree's files
+    return False
+
+
 def git(args, cwd, check=True, input=None, env=None):
+    key = None
+    if _reads_only(args) and not env:
+        key = (tuple(args), cwd, input)
+        if key in _answers:
+            result = _answers[key]
+            if check and result.returncode != 0:
+                raise GitError(args, result)
+            return result
+    else:
+        forget()
     full_env = dict(os.environ)
     full_env.update(_ENV)
     full_env.update(env or {})
@@ -25,6 +65,8 @@ def git(args, cwd, check=True, input=None, env=None):
         ["git", "-c", "core.quotePath=false", *args], cwd=cwd, input=input, capture_output=True, text=True,
         env=full_env,
     )
+    if key is not None:
+        _answers[key] = result
     if check and result.returncode != 0:
         raise GitError(args, result)
     return result
@@ -48,6 +90,9 @@ def read_blobs(specs, cwd):
     """Read many 'ref:path' blobs in one call. Missing ones come back as None."""
     if not specs:
         return {}
+    key = ("cat-file --batch", tuple(specs), cwd)
+    if key in _answers:
+        return dict(_answers[key])
     result = subprocess.run(
         ["git", "cat-file", "--batch"], cwd=cwd, input="\n".join(specs).encode() + b"\n",
         capture_output=True, check=True,
@@ -63,6 +108,7 @@ def read_blobs(specs, cwd):
         size = int(header.split()[2])
         found[spec] = data[pos:pos + size].decode("utf-8", errors="replace")
         pos += size + 1
+    _answers[key] = dict(found)
     return found
 
 

@@ -38,12 +38,14 @@ external_id = "github#123"
 
 ## A ticket is its branch
 
-Work from GitHub issues comes in with `rail intake github` (issues labelled `rail`), and from any other
-tracker with `rail intake --external-id KEY --title T --brief FILE`. Both make a ticket with the request and
-an empty contract; `rail next` asks the agent to write it, and `rail amend NN --file FILE` saves it. Intake
-is idempotent by `external_id`.
+Issues labelled `rail` come in with every `rail next` when GitHub can be reached (`rail intake github` does
+the same on request), and work from any other tracker with
+`rail intake --external-id KEY --title T --brief FILE`. Each makes a ticket with the request and an empty
+contract; `rail next` asks the agent to write it, and `rail amend NN --file FILE` saves it. Intake is
+idempotent by `external_id`.
 
 `add` takes the next ID, makes the branch `NN-slug`, and commits the ticket there without touching your
-checkout. With a remote, the ID is taken by pushing the branch `rail/id/NN`: if another clone took it
-first, the push is refused and `add` takes the next one. Without a remote, a folder in the git directory
-does the same. An ID is never reused.
+checkout. With a remote, the ID is taken by moving one counter branch, `rail/ids`, a commit forward: if
+another clone took the ID first, the push is refused and `add` takes the next one. Without a remote, a
+folder in the git directory does the same. An ID is never reused, and `rail/ids` is the only branch the
+IDs need, so leave it in place.

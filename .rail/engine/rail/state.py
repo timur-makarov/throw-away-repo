@@ -1,18 +1,18 @@
-"""State derivation (plan, section 7; SPEC, section 4). State is derived from git and the journal, never stored."""
+"""State derivation. State is derived from git and the journal, never stored."""
 
 import os
 
 from . import gitx
 from .project import NON_PRODUCT, ticket_path
 from .ticket import TIERS, Ticket, highest, lint, rank
-from .util import globs_overlap, match_any
+from .util import globs_overlap, match_any, minutes_since
 
 OPEN = ("implementing", "reviewing", "in-ci", "merge-ready")  # claimed and not finished
 SHIP_STEPS = ("rebase", "ticket-lint", "assumptions", "scope", "rules", "migration", "size", "verify", "checks")
 
 
 def floor(project, scope):
-    """The tier the risk and migration paths set for a scope, and why. Matched at add (plan, section 5)."""
+    """The tier the risk and migration paths set for a scope, and why. Matched at add."""
     cfg = project.config
     if not hasattr(project, "_tracked"):
         listing = gitx.git(["ls-tree", "-r", "--name-only", project.base_ref], project.root, check=False)
@@ -33,7 +33,7 @@ def floor(project, scope):
 
 
 def raised_tier(project, files):
-    """The tier the changed files need, and why. Used at ship (SPEC: tier_raised)."""
+    """The tier the changed files need, and why. Used at ship."""
     cfg = project.config
     if any(match_any(cfg["migration_paths"], f) for f in files):
         return "HIGH", "migration_paths"
@@ -53,8 +53,11 @@ class Facts:
         self.explicit = False
         self.lint_errors = lint(t.ticket, expect_id=t.id) if t.ticket else ["the ticket file is missing"]
         self.accepted = t.last("accepted")
-        self.claimed = t.last("claimed")
+        # The newest claim, the remote's journal included: after a takeover this clone's own branch doesn't have it.
+        claims = [e for e in list(t.events) + list(t.remote_events) if e.get("event") == "claimed"]
+        self.claimed = sorted(claims, key=lambda e: e.get("at", ""))[-1] if claims else None  # of equal times, the later
         self.dropped_event = t.last("dropped")
+        self.contract_merged = False
         self.patch_id = None
         self.dirty = []
         self.shipped = None
@@ -90,14 +93,14 @@ class Facts:
         self.state = self._state()
 
     def _budgets(self, project, events):
-        """Retry budgets and the waits derived from the journal (SPEC section 3, and the waits in section 4)."""
+        """Retry budgets and the waits derived from the journal."""
         budget = project.config["retry"]["budget"]
         attempts, consulted, since = {}, set(), 0
         accepted_at = amended_at = shipped_at = continued_at = -1
         for i, e in enumerate(events):
             kind = e.get("event")
             if kind == "continued" or (kind == "accepted" and e.get("by") == "person"):
-                # A person's act gives a fresh budget (plan, section 10), whether it continues a wait or approves.
+                # A person's act gives a fresh budget, whether it continues a wait or approves.
                 attempts, consulted, since = {}, set(), i
                 if kind == "continued":
                     continued_at = i
@@ -129,7 +132,7 @@ class Facts:
         self.stuck_review = len(runs) >= 2 and all(e.get("detail") == "timeout" for e in runs[-2:])
         self.amend_pending = amended_at > accepted_at
         self.merge_approved = continued_at > shipped_at >= 0
-        # A person's note from `accept` goes into the agent's briefs until the next ship (plan, section 10).
+        # A person's note from `accept` goes into the agent's briefs until the next ship.
         notes = [(i, e) for i, e in enumerate(events) if e.get("note") and (
             e.get("event") == "continued" or (e.get("event") == "accepted" and e.get("by") == "person"))]
         self.person_note = notes[-1][1]["note"] if notes and notes[-1][0] > shipped_at else None
@@ -147,6 +150,35 @@ class Facts:
         return bool(self.claimed) and self.claimed.get("session") != self.project.session
 
     @property
+    def in_flight(self):
+        """An agent is, or should be, at work on it. A shipped ticket waiting for CI or a merge has no work in
+        flight: the engine moves it, from any session."""
+        return self.state in ("implementing", "reviewing")
+
+    @property
+    def quiet_minutes(self):
+        """Minutes since the ticket's last journal event: every engine move writes one and pushes it, and a
+        session at work saves at least every claim.save_minutes."""
+        times = [e.get("at", "") for e in list(self.t.events) + list(self.t.remote_events) if e.get("at")]
+        return minutes_since(max(times)) if times else None
+
+    @property
+    def taken_from_me(self):
+        """Another session took this ticket over while this session's worktree for it is still here."""
+        mine = any(e.get("event") == "claimed" and e.get("session") == self.project.session for e in self.t.events)
+        return bool(self.worktree) and mine and self.claimed_elsewhere
+
+    @property
+    def held(self):
+        """Another session's work in flight. Its claim holds while the ticket keeps moving: after
+        claim.stale_minutes with no event, the session is taken to have ended (a cloud VM is reclaimed, a laptop
+        closes), and the next session to look resumes the ticket."""
+        if not (self.claimed_elsewhere and self.in_flight):
+            return False
+        quiet = self.quiet_minutes
+        return quiet is None or quiet < self.project.config["claim"]["stale_minutes"]
+
+    @property
     def needs_review(self):
         return rank(self.tier) >= rank("MEDIUM")
 
@@ -156,11 +188,17 @@ class Facts:
 
     def _state(self):
         t, project = self.t, self.project
-        if t.merged or (self.pr and self.pr.get("merged")):
+        # GitHub's list of pull requests carries merged_at, and no merged flag.
+        merged_at = (self.pr or {}).get("merged_at") or ("9" if (self.pr or {}).get("merged") else None)
+        ships = [e.get("at", "") for e in t.events if e.get("event") == "shipped"]
+        if t.merged or (merged_at and ships and merged_at >= max(ships)):
             return "merged"
-        if self.dropped_event or not t.name:
-            return "dropped"  # a dropped event, or the ID ref is all that is left (SPEC, section 4)
-        if self.pr and self.pr.get("state") == "closed":
+        # A pull request merged before its ticket shipped, or a ticket file on the base branch with no branch and no
+        # ship: a person merged the contract. That is their approval; the work is still to do.
+        self.contract_merged = not self.dropped_event and (bool(merged_at) or (t.on_base and not t.name and not ships))
+        if self.dropped_event or (not t.name and not self.contract_merged):
+            return "dropped"  # a dropped event, or the ID is all that is left: its branch is gone
+        if self.pr and self.pr.get("state") == "closed" and not merged_at:
             return "dropped"  # the PR was closed without a merge
         if not self.accepted:
             return "new"
@@ -195,6 +233,7 @@ class Facts:
             return "implementing"
         if self.pr_open:
             # The engine reads CI only once the ticket has shipped this patch, and only on the head it pushed.
+            self.pr = self.forge.full(self.pr)
             tip = gitx.rev(t.ref, project.root)
             self.pushed = self.pr["head"]["sha"] == tip
             self.conflict = self.pr.get("mergeable_state") == "dirty"

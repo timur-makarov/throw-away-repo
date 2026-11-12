@@ -1,4 +1,4 @@
-"""`rail docs [topic]`: the framework's docs, shipped inside the engine (plan, section 13).
+"""`rail docs [topic]`: the framework's docs, shipped inside the engine.
 
 Pages are markdown files in engine/docs. The config and CLI reference pages are generated from the engine itself,
 so they can't drift from what the engine reads.
@@ -11,22 +11,31 @@ from . import config as configmod
 
 DOCS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs")
 
-# Every config field names its reader (plan, section 1). A test checks this covers config.DEFAULTS.
+# Every config field names its reader. A test checks this covers config.DEFAULTS.
 READERS = {
     "base_branch": "claim, ship, CI and the merge: the branch tickets start from and merge into",
     "auto_tiers": "acceptance and the merge: these tiers are accepted and merged with no person",
     "migration_paths": "add and ship: a HIGH floor; tickets touching them need reversibility and rollback",
     "commands.setup": "the claim: runs in each new ticket worktree, with RAIL_TICKET set",
     "commands.verify": "ship and CI: the whole project's checks, scanners included",
-    "commands.timeout_secs": "every command: setup, verify, each check, each review run",
+    "commands.provision": "rail provision, next in a cloud session, and CI: installs what the machine lacks, once"
+                          " per machine, as root. Never run on a person's own machine",
+    "commands.timeout_secs": "every command: setup, verify, provision, each check, each review run",
     "risk_paths.HIGH": "add (matched against scope_paths) and ship (changed files): a HIGH floor",
     "risk_paths.MEDIUM": "add and ship: a MEDIUM floor",
     "size.LOW": "ship and CI: changed lines over this raise a LOW ticket to MEDIUM",
     "size.MEDIUM": "ship and CI: changed lines over this raise a MEDIUM ticket to HIGH",
     "size.exclude": "ship and CI: globs left out of the size count, besides generated files and lockfiles",
     "review.command": "advance: the reviewer, run in the ticket's worktree with the brief on stdin",
+    "review.model": "advance and sweep: the model the reviewer runs on (ANTHROPIC_MODEL and RAIL_MODEL for the"
+                    " command); empty leaves the command's default",
     "retry.budget": "next and advance: failed attempts per step before consult, then a person",
     "consult.command": "the consult pack: a read-only model, with the brief on stdin",
+    "consult.model": "the consult pack: the model consult runs on, set the same way as review.model",
+    "claim.stale_minutes": "next: minutes without a journal event after which another session's work in flight is"
+                           " taken to be abandoned and resumed. Keep it above your longest command",
+    "claim.save_minutes": "the save hooks and advance: work in flight is saved, and shows it is alive, at least this"
+                          " often while a session works",
     "sweep.after": "next: LOW tickets and ticketless commits since the last sweep before one is offered",
     "map.depth": "doc-lint: the directory depth ## Areas must cover",
     "map.ignore": "doc-lint: directories that need no ## Areas row",

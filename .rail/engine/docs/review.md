@@ -5,6 +5,11 @@ by hand: `advance` runs `[review] command` in the ticket's worktree with a brief
 `review/v1` output, binds the run to the patch, and resets the worktree afterwards. The reviewer may run
 commands and write scratch files to test an idea; all of it is thrown away.
 
+**The reviewer's model** is `[review] model` in `.rail/config.toml`, such as `model = "claude-opus-5-5"`.
+The engine passes it to the command as `ANTHROPIC_MODEL`, which the `claude` CLI reads, and as `RAIL_MODEL`
+for any other command. Empty leaves the command's own default. The model that answered is stored with each
+run and shown in the pull request's Evidence table. `[consult] model` does the same for consult.
+
 The brief holds the ticket, the diff, the matching `## Areas` rows, the project's own part of `AGENTS.md`
 (never the `## Rail` section), what to look for, and the do-not-report list. On a re-review it also holds
 the earlier findings and your answers.

@@ -1,4 +1,4 @@
-"""The review (plan, section 8; SPEC sections 1 and 2).
+"""The review: its runs, its findings and their answers.
 
 The gate launches the reviewer: `advance` runs `review.command` in the ticket's worktree with the brief on stdin,
 reads its structured output, binds the run to the patch, and resets the worktree. The engine assigns finding ids.
@@ -61,7 +61,7 @@ def load_doc(text, nn):
 
 
 class Ledger:
-    """Every finding of a ticket, from its `finding` events and the stored runs (SPEC sections 2 and 3)."""
+    """Every finding of a ticket, from its `finding` events and the stored runs."""
 
     def __init__(self, events, doc):
         self.events, self.doc = events, doc
@@ -95,7 +95,7 @@ class Ledger:
 
     def disputed(self):
         """Blocking findings a fresh refuter decides: those the author disputes, and each new one from the HIGH
-        security seat (plan, section 8, item 7)."""
+        security seat."""
         found = []
         for fid, f in self.findings.items():
             if self.outcome(fid) != "open":
@@ -125,7 +125,7 @@ class Ledger:
                    for i, e in enumerate(self.events))
 
     def needed_run(self, patch_id, tier):
-        """The role whose run the patch still needs, or None (SPEC section 2, conditions 1 and 3)."""
+        """The role whose run the patch still needs, or None."""
         roles = ["review"] + (["security"] if tier == "HIGH" else [])
         for role in roles:
             if not self.runs(role, patch_id):
@@ -218,7 +218,9 @@ def _structured(stdout):
     meta = {}
     if isinstance(data, dict) and "structured_output" in data:
         usage = data.get("modelUsage") or {}
-        meta = {"model": next(iter(usage), None) or data.get("model"), "cost_usd": data.get("total_cost_usd")}
+        # The model that did the work: a run can also bill a small helper model, so take the costliest.
+        main = max(usage, key=lambda m: (usage[m] or {}).get("costUSD", 0), default=None) if isinstance(usage, dict) else None
+        meta = {"model": main or data.get("model"), "cost_usd": data.get("total_cost_usd")}
         data = data["structured_output"]
     elif isinstance(data, dict) and isinstance(data.get("result"), str) and "findings" not in data:
         m = re.search(r"\{.*\}", data["result"], re.S)
@@ -227,7 +229,8 @@ def _structured(stdout):
 
 
 def validate(project, head, nn, data, ledger, role, disputed):
-    """The schema's shape and SPEC's engine checks. Returns a list of errors."""
+    """The schema's shape, and what only the engine can check: each finding names a tracked file and a line
+    inside it, and `repeats` names an earlier finding of this ticket. Returns a list of errors."""
     if not isinstance(data, dict) or not isinstance(data.get("summary"), str) or not isinstance(data.get("findings"), list):
         return ["the output is not a review/v1 object with summary and findings"]
     errors = []
@@ -257,7 +260,7 @@ def validate(project, head, nn, data, ledger, role, disputed):
 
 def run(project, f, role, receipt, disputed=None, prompt=None):
     """One run of review.command. Adds its step and finding events to `receipt`, and returns the stored run entry.
-    A sweep run brings its own brief, writes no finding events, and never fails (SPEC, section 4)."""
+    A sweep run brings its own brief, writes no finding events, and never fails."""
     t, wt = f.t, f.t.worktree
     head = gitx.rev(t.ref, project.root)
     text = gitx.read_blobs([f"{t.ref}:{review_path(t.id)}"], project.root)[f"{t.ref}:{review_path(t.id)}"]
@@ -265,7 +268,10 @@ def run(project, f, role, receipt, disputed=None, prompt=None):
     ledger = Ledger(t.events, doc)
     prompt = prompt or brief(project, f, role, ledger, disputed)
     timeout = project.config["commands"]["timeout_secs"]
-    code, output, ms = run_shell(project.config["review"]["command"], wt, {"RAIL_TICKET": t.id}, timeout, stdin=prompt)
+    from .steps import keep_alive
+    keep_alive(project, t)
+    code, output, ms = run_shell(project.config["review"]["command"], wt,
+                                 {"RAIL_TICKET": t.id, **model_env(project.config["review"]["model"])}, timeout, stdin=prompt)
     gitx.git(["reset", "--quiet", "--hard", head], wt)
     gitx.git(["clean", "-fdq"], wt)
     step = role
@@ -316,7 +322,7 @@ def run(project, f, role, receipt, disputed=None, prompt=None):
         events.append(event(t.id, "finding", id=disputed, outcome="declined", by="refuter", reason=data["summary"]))
     blocking = [x for x in entry["findings"] if (ledger.findings.get(x.get("repeats"), x).get("severity") == "blocking")]
     if role == "security":
-        # The seat's new blocking findings each go to a refuter at once (plan, section 8, item 7); the refuter's
+        # The seat's new blocking findings each go to a refuter at once; the refuter's
         # verdict is what fails. A repeat of one the refuter already upheld stays open.
         blocking = [x for x in blocking if x.get("repeats")]
     if role == "sweep":
@@ -333,6 +339,12 @@ def run(project, f, role, receipt, disputed=None, prompt=None):
     doc["runs"].append(entry)
     receipt.files[review_path(t.id)] = json.dumps(doc, indent=2) + "\n"
     return entry
+
+
+def model_env(model):
+    """[review] model and [consult] model name the model a command runs on. The claude CLI reads ANTHROPIC_MODEL;
+    another vendor's command can read RAIL_MODEL. Empty leaves the command's own default."""
+    return {"ANTHROPIC_MODEL": model, "RAIL_MODEL": model} if model else {}
 
 
 def needs_review(tier):

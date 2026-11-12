@@ -10,6 +10,7 @@ from .ticket import Ticket
 from .util import RailError, now_iso
 
 REMOTE = "origin"
+IDS_BRANCH = "rail/ids"  # one commit per ticket ID, each a child of the last: the counter two clones can't both move
 WORKTREES = ".claude/worktrees"
 NON_PRODUCT = (".rail/tickets", ".rail/journal")
 PRODUCT_SPEC = ["--", "."] + [f":(exclude){p}" for p in NON_PRODUCT]
@@ -61,8 +62,11 @@ class TicketInfo:
         self.events = []
         self.review_text = None    # NN-review.json, the stored review runs
         self.merged = None         # the squash commit on base
-        self.id_taken = False      # rail/id/NN on the remote, or the mkdir without one
+        self.id_taken = False      # the ID is in the remote's counter branch, or the mkdir without a remote
+        self.label = ""            # the title the ticket was added with, kept by the counter branch
         self.worktree = None
+        self.on_base = False       # the ticket file is on the base branch
+        self.remote_events = []    # the remote branch's journal, when it differs from the local branch's
 
     @property
     def name(self):
@@ -100,7 +104,9 @@ class Project:
     def sync(self):
         """Fetch from the remote when there is one. Offline is fine: the network steps say so."""
         if self.remote:
+            from . import forge
             self.online = gitx.fetch(self.root, self.remote)
+            forge.expire()  # what GitHub said before the fetch may be old too
         return self.online
 
     def worktree_path(self, nn):
@@ -119,14 +125,16 @@ class Project:
             return found.setdefault(nn, TicketInfo(nn))
 
         prefixes = ["refs/heads"] + ([f"refs/remotes/{self.remote}"] if self.remote else [])
-        refs = gitx.out(["for-each-ref", "--format=%(refname)", *prefixes], self.root).splitlines()
-        for ref in sorted(refs):
+        heads = gitx.out(["for-each-ref", "--format=%(objectname) %(refname)", *prefixes], self.root).splitlines()
+        tips = {ref: sha for sha, ref in (line.split(" ", 1) for line in heads)}
+        for ref in sorted(tips):
             if m := re.match(r"refs/heads/((\d+)-.+)$", ref):
                 info(m.group(2)).branch = info(m.group(2)).branch or m.group(1)
             elif self.remote and (m := re.match(rf"refs/remotes/{self.remote}/((\d+)-.+)$", ref)):
                 info(m.group(2)).remote_branch = info(m.group(2)).remote_branch or m.group(1)
-            elif self.remote and (m := re.match(rf"refs/remotes/{self.remote}/rail/id/(\d+)$", ref)):
-                info(m.group(1)).id_taken = True
+        for nn, label in self.counter()[2].items():
+            info(nn).id_taken = True
+            info(nn).label = label
         if os.path.isdir(self.ids_dir):
             for nn in os.listdir(self.ids_dir):
                 if nn.isdigit():
@@ -144,7 +152,7 @@ class Project:
             listing = gitx.out(["ls-tree", "--name-only", base, ".rail/tickets/"], self.root)
             for path in listing.splitlines():
                 if m := re.match(r"\.rail/tickets/(\d+)\.md$", path):
-                    info(m.group(1))
+                    info(m.group(1)).on_base = True
 
         trees = gitx.worktrees(self.root)
         specs = []
@@ -156,6 +164,11 @@ class Project:
                 t.ref = f"refs/remotes/{self.remote}/{t.remote_branch}"
             source = t.ref or base
             specs += [f"{source}:{ticket_path(nn)}", f"{source}:{events_path(nn)}", f"{source}:{review_path(nn)}"]
+            other = f"refs/remotes/{self.remote}/{t.remote_branch}" if t.branch and t.remote_branch else None
+            if other and tips.get(other) != tips.get(t.ref):
+                # The remote branch moved, or this one has commits it lacks: another session may have taken the
+                # ticket over, and its journal says so.
+                specs.append(f"{other}:{events_path(nn)}")
         blobs = gitx.read_blobs(specs, self.root)
         self.orphans = []
         for nn, t in list(found.items()):
@@ -164,6 +177,8 @@ class Project:
             t.ticket = Ticket(text) if text is not None else None
             t.events = parse_events(blobs.get(f"{source}:{events_path(nn)}"))
             t.review_text = blobs.get(f"{source}:{review_path(nn)}")
+            if t.branch and t.remote_branch:
+                t.remote_events = parse_events(blobs.get(f"refs/remotes/{self.remote}/{t.remote_branch}:{events_path(nn)}"))
             if t.ticket is None and not t.merged and not t.id_taken:
                 # A branch named like a ticket that belongs to no ticket: listed for the person, never touched.
                 self.orphans.append(t.name)
@@ -198,7 +213,7 @@ class Project:
     # --- writing ---------------------------------------------------------------
 
     def cache_read(self, kind, key):
-        """The local cache, keyed by ticket, in the git common dir (plan, section 3): notes nothing else needs."""
+        """The local cache, keyed by ticket, in the git common dir: notes nothing else needs."""
         path = os.path.join(self.common, "rail", "cache", kind, key)
         if not os.path.exists(path):
             return None
@@ -236,8 +251,11 @@ class Project:
             with open(note) as f:
                 lease = f"{branch}:{f.read().strip()}"
         result = gitx.push(self.root, self.remote, f"refs/heads/{branch}:refs/heads/{branch}", lease)
-        if result == "ok" and os.path.exists(note):
-            os.remove(note)
+        if result == "ok":
+            from . import forge
+            forge.expire()  # the pull request's head moved
+            if os.path.exists(note):
+                os.remove(note)
         return result
 
     def append_events(self, t, events, message, lease=None, files=None):
@@ -258,20 +276,53 @@ class Project:
         t.events.extend(events)
         return self.push_branch(t.branch, lease)
 
-    def take_id(self, start, build):
-        """Take the next free ID at or above `start`. `build(nn)` makes the ticket's first commit."""
+    def counter(self, fetch=False):
+        """(tip, highest ID, {ID: the title it was added with}) from the remote's counter branch. Each commit there
+        is `rail id NN` with the ticket's title below, and its parent is the ID before it. The chain shares no
+        history with the project, so it costs a shallow clone nothing."""
+        if not self.remote:
+            return None, 0, {}
+        ref = f"refs/remotes/{self.remote}/{IDS_BRANCH}"
+        if fetch:
+            # By name, so a clone that fetches only some branches still reads the counter.
+            gitx.git(["fetch", "--quiet", self.remote, f"+refs/heads/{IDS_BRANCH}:{ref}"], self.root, check=False)
+        tip = gitx.rev(ref, self.root)
+        if not tip:
+            return None, 0, {}
+        ids = {}
+        log = gitx.out(["log", "--first-parent", "--format=%s%x1f%b%x1e", tip], self.root)
+        for entry in log.split("\x1e"):
+            subject, _, body = entry.strip().partition("\x1f")
+            m = re.match(r"rail id (\d+)$", subject)
+            if m:
+                ids[m.group(1)] = body.strip()
+        return tip, max((int(nn) for nn in ids), default=0), ids
+
+    def take_id(self, start, build, label=""):
+        """Take the next free ID at or above `start`. `build(nn)` makes the ticket's first commit.
+
+        With a remote, the ID is taken by moving the counter branch one commit forward with a plain push. Git
+        accepts only a fast-forward, so when two clones try at once one push is refused, and that clone reads the
+        counter again and takes the next ID. One branch holds every ID: a cloud session can't delete branches, so a
+        branch per ID would stay for ever.
+        """
         nn = start
         if self.remote:
             if not self.online:
                 raise RailError("can't reach the remote to take a ticket ID; try again online", code="UNAVAILABLE")
-            while True:
-                commit = build(str(nn))
-                result = gitx.push(self.root, self.remote, f"{commit}:refs/heads/rail/id/{nn}")
+            empty = gitx.git(["mktree"], self.root, input="").stdout.strip()
+            for _ in range(100):
+                tip, last, _ = self.counter(fetch=True)
+                nn = max(start, last + 1)
+                parent = ["-p", tip] if tip else []
+                marker = gitx.out(["commit-tree", empty, *parent, "-m", f"rail id {nn}", "-m", label], self.root)
+                result = gitx.push(self.root, self.remote, f"{marker}:refs/heads/{IDS_BRANCH}")
                 if result == "ok":
-                    return str(nn), commit
+                    gitx.git(["update-ref", f"refs/remotes/{self.remote}/{IDS_BRANCH}", marker], self.root, check=False)
+                    return str(nn), build(str(nn))
                 if result != "rejected":
                     raise RailError("can't push the ticket ID to the remote", code="UNAVAILABLE")
-                nn += 1
+            raise RailError("the ticket ID counter keeps moving; try again", code="UNAVAILABLE")
         os.makedirs(self.ids_dir, exist_ok=True)
         while True:
             try:

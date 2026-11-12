@@ -1,4 +1,4 @@
-"""The `rail` verbs. Every verb answers in one JSON shape (plan, section 6) with --json, or as text without it.
+"""The `rail` verbs. Every verb answers in one JSON shape with --json, or as text without it.
 
 Exit codes: 0 when the command worked (read `owner`), 2 for a usage error, 3 when a step failed.
 """
@@ -15,10 +15,10 @@ from .project import Project, event, events_path, ticket_path
 from .state import OPEN, derive, floor
 from .table import TRANSITIONS, first_match
 from .ticket import Ticket, branch_name, highest, lint, rank, with_id, with_tier
-from .util import RailError, age, match_any
+from .util import RailError, age, cloud, disposable, match_any, session_url
 
 VERBS = ("init", "add", "accept", "amend", "answer", "next", "advance", "status", "context", "drop", "doctor", "ci",
-         "consult", "docs", "intake", "sweep")
+         "consult", "docs", "intake", "sweep", "provision", "save")
 STALE_DAYS = 3
 
 
@@ -51,16 +51,17 @@ def ticket_from_cwd(project):
 
 
 def requested(project, args):
-    """--ticket, then RAIL_TICKET, then the worktree the command runs in (plan, section 6)."""
+    """--ticket, then RAIL_TICKET, then the worktree the command runs in."""
     return getattr(args, "ticket", None) or os.environ.get("RAIL_TICKET") or ticket_from_cwd(project)
 
 
-def load(project, fresh_forge=True):
-    """Tickets and their facts. The forge is read again each time, unless `fresh_forge` is False."""
+def load(project):
+    """Tickets and their facts. GitHub is read again only when something can have changed there."""
     from .forge import Forge
 
-    if fresh_forge or getattr(project, "forge", None) is None:
-        project.forge = Forge(project)
+    earlier = getattr(project, "forge", None)
+    if earlier is None or earlier.stale:
+        project.forge = Forge(project, earlier)
     tickets = project.tickets()
     return tickets, derive(project, tickets)
 
@@ -86,11 +87,13 @@ def ensure_local(project, t):
 
 
 def claim(project, t, takeover=False):
-    """A claim is a commit with the `claimed` event on the ticket branch, pushed (plan, section 5)."""
+    """A claim is a commit with the `claimed` event on the ticket branch, pushed."""
     for _ in range(3):
         ensure_local(project, t)
         before = gitx.rev(t.ref, project.root)
-        claimed = event(t.id, "claimed", session=project.session, takeover=takeover)
+        url = session_url()  # in a cloud session: the conversation a person can open from the ticket
+        claimed = event(t.id, "claimed", session=project.session, takeover=takeover,
+                        **({"session_url": url} if url else {}))
         result = project.append_events(t, [claimed], "claim" if not takeover else "take over")
         if result != "rejected":
             return True
@@ -122,8 +125,49 @@ def make_ready(project, t, run, fresh=False):
             project.append_events(t, run.events, "setup")
 
 
+def contract_pr(f):
+    """The title and description of a contract pull request: the ticket as it stands, for a person to approve."""
+    title = f"{f.id}: [contract] {f.ticket.title}"
+    body = (f"The contract of ticket {f.id} ({f.tier}). Approve it with the label `rail:go`, or say \"accept {f.id}\"."
+            f" To change it, comment here. To reject it, close this pull request.\n\n"
+            f"**Don't merge it.** It holds only the contract: the work comes after your approval, on this same pull"
+            f" request, and the `rail` check stays red until it ships.\n\n{f.ticket.text}")
+    return title, body
+
+
+def restart_on_base(project, f, run):
+    """A pull request merged before its ticket shipped has put the branch's commits on the base branch as one
+    squash, and a branch can't be rebased over its own squash. So the branch starts again from the base: the commits
+    made after the merge are replayed, and nothing else. Uncommitted work in the worktree is kept."""
+    t = f.t
+    merged_head = f.pr["head"]["sha"] if f.pr and f.pr.get("merged_at") and f.pr.get("head") else None
+    base_tip, tip = gitx.rev(project.base_ref, project.root), gitx.rev(t.ref, project.root) if t.ref else None
+    if not merged_head or not tip or not base_tip or gitx.ok(["merge-base", "--is-ancestor", base_tip, tip], project.root):
+        return True  # no merged pull request to start again from, or the branch is on the base already
+    if not gitx.ok(["merge-base", "--is-ancestor", merged_head, tip], project.root):
+        return True  # the branch isn't built on what was merged: an ordinary rebase is right for it
+    project.note_rewrite(t.branch)
+    if tip == merged_head:
+        if t.worktree:
+            moved = gitx.git(["reset", "--quiet", "--keep", base_tip], t.worktree, check=False).returncode == 0
+        else:
+            moved = gitx.update_ref(project.root, t.ref, base_tip, tip)
+    elif t.worktree:
+        moved = gitx.git(["rebase", "--quiet", "--autostash", "--onto", base_tip, merged_head], t.worktree,
+                         check=False).returncode == 0
+        if not moved:
+            gitx.git(["rebase", "--abort"], t.worktree, check=False)
+    else:
+        return True  # commits made after the merge are replayed once the ticket has its worktree
+    return run.record("rebase", moved, project.patch_id(t.ref) if moved else None,
+                      f"onto {project.base}: its pull request was merged before the work shipped",
+                      output=f"The branch {t.branch} couldn't be moved onto {project.base} after its pull request was"
+                             f" merged early. Rebase it yourself in {project.rel(t.worktree) if t.worktree else 'a worktree'}"
+                             f" (git rebase --onto {project.base} {merged_head[:12]}), then run: rail next")
+
+
 def ensure_pr(project, f, receipts):
-    """Every wait after add has a PR to label (plan, section 7): a contract PR at add for tiers outside auto_tiers,
+    """Every wait after add has a PR to label: a contract PR at add for tiers outside auto_tiers,
     and a PR at claim for the rest."""
     from .forge import ForgeError
 
@@ -134,9 +178,7 @@ def ensure_pr(project, f, receipts):
     if f.state == "new":
         if f.lint_errors or f.auto:
             return None
-        title = f"{t.id}: [contract] {f.ticket.title}"
-        body = (f"The contract of ticket {t.id} ({f.tier}). Approve it with the label `rail:go`, or say \"accept {t.id}\"."
-                f" To change it, comment here. To reject it, close this pull request.\n\n{f.ticket.text}")
+        title, body = contract_pr(f)
     elif f.state in OPEN:
         title = f"{t.id}: {f.ticket.title}"
         body = (f"{f.ticket.sections.get('Why', '')} (ticket {t.id})\n\nNot shipped yet: the rail check stays red until"
@@ -153,7 +195,7 @@ def ensure_pr(project, f, receipts):
 
 
 def update_pr(project, f, receipts):
-    """At ship, the PR's title loses [contract] and its description becomes the ticket's (plan, section 9)."""
+    """At ship, the PR's title loses [contract] and its description becomes the ticket's."""
     from .forge import ForgeError
 
     if not f.pr_open or not f.shipped:
@@ -172,7 +214,8 @@ def person_comments(project, f):
     """PR comments since the ticket's last journal event: what a person said during the wait."""
     if not f.pr:
         return ""
-    since = f.t.events[-1]["at"] if f.t.events else ""
+    moves = [e["at"] for e in f.t.events if e.get("event") != "saved" and e.get("at")]  # a save isn't a move
+    since = moves[-1] if moves else ""
     said = [c["body"].strip() for c in project.forge.comments(f.pr["number"])
             if c.get("created_at", "") >= since and c.get("body")]
     return "\n".join(said)
@@ -187,6 +230,7 @@ def transition(project, f, code):
         project.append_events(t, [accepted_event(t.id, f.ticket, f.tier, "engine", "lint")], "accept")
     elif code == "CONSULT":
         from . import consult
+        ensure_local(project, t)
         last = [e for e in t.events if e.get("event") == "step" and e.get("step") == f.consult_due]
         question = (f"The step '{f.consult_due}' failed {f.attempts.get(f.consult_due)} times. What is wrong, and"
                     " should the agent proceed, change its approach, or stop and ask a person?")
@@ -198,8 +242,22 @@ def transition(project, f, code):
         make_ready(project, t, run, fresh=True)
         tickets, facts = load(project)
         ensure_pr(project, facts[t.id], run.steps)
+    elif code == "CONTRACT_MERGED":
+        # A person merged the contract's pull request. That is their approval: the ticket goes on, on its branch,
+        # made again from the base when GitHub deleted it, and gets a new pull request at its claim.
+        if not t.name:
+            name = branch_name(f.ticket)
+            gitx.update_ref(project.root, f"refs/heads/{name}", gitx.rev(project.base_ref, project.root), None)
+            t.branch, t.ref = name, f"refs/heads/{name}"
+        ensure_local(project, t)
+        restart_on_base(project, f, run)
+        run.events.append(accepted_event(t.id, f.ticket, f.tier, "person", "merge"))
+        project.append_events(t, run.events, "accept: the contract was merged")
+        run.events = []
+        run.steps.append({"step": "contract", "status": "ran", "result": "pass",
+                          "detail": "its pull request was merged before the work: taken as the approval"})
     elif code == "GO":
-        # A person's rail:go: it approves a contract or an amend, or continues any other wait (plan, section 10).
+        # A person's rail:go: it approves a contract or an amend, or continues any other wait.
         note = person_comments(project, f) or None
         ensure_local(project, t)
         if f.state == "new" or f.amend_pending:
@@ -210,7 +268,7 @@ def transition(project, f, code):
         for label in ("rail:go", "rail:needs-you"):
             project.forge.remove_label(f.pr["number"], label)
     elif code == "REBASE_BEHIND":
-        # The base requires up-to-date branches: rebase the shipped PR with no agent work (plan, section 11).
+        # The base requires up-to-date branches: rebase the shipped PR with no agent work.
         ensure_local(project, t)
         if not t.worktree:
             make_ready(project, t, run)
@@ -251,6 +309,16 @@ def settle(project, nn, explicit):
             reran_setup = True
             continue
         if code not in TRANSITIONS:
+            if f.state in OPEN and f.forge and not f.pr_open and f.t.branch and not f.claimed_elsewhere:
+                # Its pull request was merged or lost before the work shipped: the ticket goes on, with a new one.
+                run = steps.Run(project, f.t)
+                if f.contract_merged:
+                    restart_on_base(project, f, run)
+                    if run.events:
+                        commit(project, f, run, "start again from the base")
+                    receipts += run.steps
+                if run.ok and ensure_pr(project, f, receipts):
+                    continue
             return f, receipts
         done, run = transition(project, f, code)
         receipts += run.steps
@@ -273,8 +341,8 @@ def cleanup(project, tickets, facts):
 
 
 def create_ticket(project, text):
-    """Take the next ID and make the ticket's branch with the ticket file, without touching any checkout (plan,
-    section 5). A ticket that passes lint on an auto tier is accepted at once. Returns (id, branch, push result)."""
+    """Take the next ID and make the ticket's branch with the ticket file, without touching any checkout. A ticket
+    that passes lint on an auto tier is accepted at once. Returns (id, branch, push result)."""
     base_tip = gitx.rev(project.base_ref, project.root)
     if not base_tip:
         raise RailError(f"the base branch '{project.base}' has no commits yet")
@@ -295,7 +363,7 @@ def create_ticket(project, text):
                 files[events_path(nn)] = json.dumps(accepted, separators=(",", ":")) + "\n"
         return gitx.commit_files(project.root, base_tip, files, f"{nn}: add ticket: {ticket.title}")
 
-    nn, commit = project.take_id(project.max_id(tickets) + 1, build)
+    nn, commit = project.take_id(project.max_id(tickets) + 1, build, label=Ticket(text).title or "")
     branch = branch_name(Ticket(with_id(text, nn)))
     if not gitx.update_ref(project.root, f"refs/heads/{branch}", commit, None):
         raise RailError(f"branch {branch} already exists")
@@ -331,15 +399,14 @@ def cmd_add(project, args):
 
 
 def stub(title, request, external_id, caused_by=""):
-    """An intake ticket: the request verbatim, with the contract and tier for the agent to write (plan, section 6)."""
+    """An intake ticket: the request verbatim, with the contract and tier for the agent to write."""
     return "\n".join(["+++", f"title = {json.dumps(title)}", 'tier = ""', "scope_paths = []",
                       f"external_id = {json.dumps(external_id)}", f"caused_by = {json.dumps(caused_by)}", "+++", "",
                       "## Request", request.strip(), "", "## Why", "", "## Done Contract", ""])
 
 
 def caused_by(project, request):
-    """An issue from a failed dev deploy starts with `Commit: <sha>`; the commit's Ticket: trailer caused it
-    (plan, section 16)."""
+    """An issue from a failed dev deploy starts with `Commit: <sha>`; the commit's Ticket: trailer caused it."""
     m = re.match(r"\s*Commit:\s*([0-9a-f]{7,40})", request)
     if not m:
         return ""
@@ -359,7 +426,7 @@ def intake_one(project, facts, title, request, external_id):
 
 def cmd_intake(project, args):
     """`rail intake github` pulls issues labelled rail; `rail intake --external-id KEY --title T --brief FILE` takes
-    anything else. Both are idempotent by external_id (plan, section 6)."""
+    anything else. Both are idempotent by external_id."""
     project.sync()
     tickets, facts = load(project)
     created, skipped = [], []
@@ -397,7 +464,7 @@ def accepted_event(nn, ticket, tier, by, via, note=None):
 
 
 def cmd_accept(project, args):
-    """A person's one act that continues any wait (plan, section 10): approve a contract or an amend, or continue."""
+    """A person's one act that continues any wait: approve a contract or an amend, or continue."""
     project.sync()
     tickets, facts = load(project)
     nn = project.find(args.ticket or requested(project, args), tickets).id
@@ -424,7 +491,7 @@ def cmd_accept(project, args):
 
 
 def cmd_answer(project, args):
-    """Record how a review finding ended: fixed, declined with a reason, or parked (plan, section 8)."""
+    """Record how a review finding ended: fixed, declined with a reason, or parked."""
     project.sync()
     tickets, facts = load(project)
     f = facts[project.find(args.ticket, tickets).id]
@@ -446,7 +513,7 @@ def cmd_answer(project, args):
 
 
 def cmd_amend(project, args):
-    """Change a frozen contract (plan, section 5): the Done Contract, the scope or the tier, which only rises."""
+    """Change a frozen contract: the Done Contract, the scope or the tier, which only rises."""
     project.sync()
     tickets, facts = load(project)
     f = facts[project.find(args.ticket or requested(project, args), tickets).id]
@@ -507,12 +574,27 @@ def cmd_amend(project, args):
         project.append_events(t, events, "amend")
     elif project.remote:
         project.push_branch(t.branch)
+    project.sync()
     tickets, facts = load(project)
-    return from_facts(facts[t.id])
+    nf, receipts = facts[t.id], []
+    if nf.state == "new" and not nf.lint_errors and not nf.auto:
+        # A contract a person has yet to approve: its pull request shows the contract as it now stands. A ticket
+        # from intake gets its contract pull request here, once the agent has written the contract.
+        from .forge import ForgeError
+        if nf.pr_open:
+            title, body = contract_pr(nf)
+            try:
+                project.forge.update_pr(nf.pr["number"], title=title, body=body)
+            except ForgeError as e:
+                receipts.append({"step": "pr", "status": "unavailable", "detail": str(e)[:200]})
+        elif ensure_pr(project, nf, receipts):
+            tickets, facts = load(project)
+            nf = facts[t.id]
+    return from_facts(nf, receipts)
 
 
 def cmd_sweep(project, args):
-    """A sweep ticket over what merged without a review: the free part and one review pass (plan, section 12)."""
+    """A sweep ticket over what merged without a review: the free part and one review pass."""
     from . import sweep
 
     project.sync()
@@ -541,7 +623,7 @@ def cmd_sweep(project, args):
 
 
 def cmd_consult(project, args):
-    """The consult pack on request: a different model's advice on one question (plan, section 18)."""
+    """The consult pack on request: a different model's advice on one question."""
     from . import consult
 
     if not os.path.exists(consult.pack(project)):
@@ -560,7 +642,7 @@ def cmd_consult(project, args):
 
 
 def red_base_ticket(project, facts):
-    """When verify fails on the base branch, one fix ticket for the base (plan, section 7)."""
+    """When verify fails on the base branch, one fix ticket for the base."""
     red = project.cache_read("red-base", "base")
     if not red or red != gitx.rev(project.base_ref, project.root):
         return None
@@ -569,13 +651,38 @@ def red_base_ticket(project, facts):
     return intake_one(project, facts, f"Make verify pass on {project.base} again", request, f"red-base#{red[:12]}")
 
 
+def auto_intake(project, facts):
+    """Issues labelled rail come in with every `next` when GitHub can be reached, so labelling an issue is the
+    whole act of handing work over. Returns the receipts of the tickets it made."""
+    from .forge import ForgeError
+
+    if not (project.forge and project.forge.ok):
+        return []
+    try:
+        issues = project.forge.issues("rail")
+    except ForgeError:
+        return []
+    receipts = []
+    for issue in issues:
+        key = f"github#{issue['number']}"
+        nn = intake_one(project, facts, issue["title"], issue.get("body") or "", key)
+        if nn:
+            receipts.append({"step": "intake", "status": "ran", "result": "pass", "detail": f"ticket {nn} from {key}"})
+            _, facts = load(project)
+    return receipts
+
+
 def cmd_next(project, args):
     project.sync()
     task = init_task(project)
     if task:
         return task
+    task = provision_task(project)
+    if task:
+        return task
     tickets, facts = load(project)
-    if red_base_ticket(project, facts):
+    took_in = auto_intake(project, facts)
+    if took_in or red_base_ticket(project, facts):
         tickets, facts = load(project)
     leftovers = cleanup(project, tickets, facts)
     explicit = requested(project, args)
@@ -585,54 +692,69 @@ def cmd_next(project, args):
         if f is None:
             return answer(nn, None, "none", {"kind": "rest", "brief": f"Another session claimed ticket {nn} first."},
                           "CLAIMED_ELSEWHERE", receipts)
-        return from_facts(f, receipts, leftovers=leftovers)
+        return from_facts(f, took_in + receipts, leftovers=leftovers)
 
-    # Any ticket the agent can act on comes first: this session's own, then new work in ID order.
     tickets, facts = load(project)
+    # A person's inbox is the label: every wait gets it now, not only when the agent runs dry.
+    for f in facts.values():
+        code, owner, _ = first_match(f)
+        if owner == "human":
+            label_wait(project, f, code)
+
+    # Any ticket the agent can act on comes first: this session's own, then tickets no session holds (shipped ones,
+    # which the engine moves from anywhere, and work an ended session left), then new work in ID order.
     mine = [f for f in facts.values() if f.state in OPEN and not f.claimed_elsewhere]
+    free = [f for f in facts.values() if f.state in OPEN and f.claimed_elsewhere and not f.held]
     fresh = [f for f in facts.values() if f.state in ("new", "accepted")]
-    for candidate in mine + fresh:
+    for candidate in mine + free + fresh:
         if first_match(candidate)[1] != "agent":
             continue
         f, receipts = settle(project, candidate.id, explicit=False)
         if f is not None and first_match(f)[1] == "agent":
-            return from_facts(f, receipts, leftovers=leftovers)
+            return from_facts(f, took_in + receipts, leftovers=leftovers)
 
     tickets, facts = load(project)
-    waits, resumable, ci = [], [], []
+    waits, held, ci = [], [], []
     for f in facts.values():
         code, owner, action = first_match(f)
         if owner == "human":
             waits.append({"ticket": f.id, "needs": code, "brief": action["brief"],
                           **({"pr": f.pr["html_url"]} if f.pr else {})})
-            label_wait(project, f, code)
         elif code == "CLAIMED_ELSEWHERE":
-            resumable.append(f.id)
+            held.append({"ticket": f.id, "quiet_minutes": f.quiet_minutes,
+                         **({"session": f.claimed["session_url"]} if f.claimed.get("session_url") else {})})
         elif code == "CI_WAIT" and f.pushed:
             ci.append(f)
-    extra = {"waits": waits, "resumable": resumable, "leftovers": leftovers}
+    extra = {"waits": waits, "held": held, "leftovers": leftovers}
     if ci:
         run_id = ci_run(project, ci[0])
         if run_id:
             command = f"gh run watch {run_id} --exit-status; rail next"
             return answer(ci[0].id, ci[0].state, "agent", {"kind": "script", "brief": command, "command": command},
-                          "CI_WAIT", **extra)
+                          "CI_WAIT", took_in, **extra)
     if waits:
         brief = "Tickets wait for a person:\n" + "\n".join(f"- {w['ticket']}: {w['brief']}" for w in waits)
-        return answer(owner="human", code="WAITING_HUMAN", action={"kind": "human_wait", "brief": brief}, **extra)
+        return answer(owner="human", code="WAITING_HUMAN", action={"kind": "human_wait", "brief": brief},
+                      steps_=took_in, **extra)
     from . import sweep
     is_due, _, commits = sweep.due(project)
-    if is_due:
+    if is_due and not held:
         return answer(owner="agent", code="SWEEP", action={"kind": "script", "brief": "rail sweep", "command": "rail sweep"},
-                      **extra, unreviewed=len(commits))
+                      steps_=took_in, **extra, unreviewed=len(commits))
+    if ci:
+        # CI is running and there is no run to watch (another CI system, or the run hasn't started yet).
+        return answer(ci[0].id, ci[0].state, "none", first_match(ci[0])[2], "CI_WAIT", took_in, **extra)
     brief = "No ticket to work on. New work starts with: rail add <ticket file>"
-    if resumable:
-        brief += f"\nClaimed by other sessions, resumable with rail next --ticket NN: {', '.join(resumable)}"
-    return answer(code="NO_WORK", action={"kind": "rest", "brief": brief}, **extra)
+    if held:
+        limit = project.config["claim"]["stale_minutes"]
+        brief += ("\nOther sessions are at work on: " + ", ".join(
+            f"{h['ticket']} (quiet {h['quiet_minutes']} min)" for h in held)
+            + f". A ticket quiet for {limit} min is resumed by the next rail next; rail next --ticket NN takes one now.")
+    return answer(code="NO_WORK", action={"kind": "rest", "brief": brief}, steps_=took_in, **extra)
 
 
 def label_wait(project, f, code):
-    """The inbox is one saved search, is:open label:rail:needs-you (plan, section 10): label each wait's PR."""
+    """The inbox is one saved search, is:open label:rail:needs-you: label each wait's PR."""
     from .forge import ForgeError
 
     if f.pr_open and code != "HOLD" and "rail:needs-you" not in f.labels:
@@ -683,7 +805,7 @@ def commit(project, f, run, message):
 
 
 def after_failure(project, nn, run):
-    """At the retry budget, consult advises once before the agent's last attempt (plan, section 7)."""
+    """At the retry budget, consult advises once before the agent's last attempt."""
     from . import consult
 
     tickets, facts = load(project)
@@ -710,7 +832,7 @@ def review_stage(project, f, run):
 
 
 def merge_stage(project, f, run):
-    """Squash-merge with no remote. When the base moved since ship, rebase and ship again first (plan, section 10)."""
+    """Squash-merge with no remote. When the base moved since ship, rebase and ship again first."""
     base_tip = gitx.rev(project.base_ref, project.root)
     if not gitx.ok(["merge-base", "--is-ancestor", base_tip, f.t.ref], project.root):
         steps.ship(project, f, run)
@@ -725,7 +847,7 @@ def merge_stage(project, f, run):
 
 
 def forge_merge(project, f, receipts):
-    """auto_tiers, once CI is green: the async merge endpoint, the head pinned with sha (plan, section 7). The request
+    """auto_tiers, once CI is green: the async merge endpoint, the head pinned with sha. The request
     is noted in the local cache, not the journal, because a journal commit would move the head CI just passed."""
     import time
 
@@ -782,7 +904,8 @@ def cmd_advance(project, args):
             review_stage(project, f, run)
         elif code == "MERGE" and first and project.remote and f.pr_open:
             return forge_merge(project, f, receipts)
-        elif code == "MERGE" and first and mine and not project.remote:
+        elif code == "MERGE" and first and f.worktree and not project.remote:
+            # A shipped ticket is anyone's to merge: with no remote, every session shares this clone and its worktrees.
             merged = merge_stage(project, f, run)
             receipts += run.steps
             if not merged:
@@ -795,8 +918,9 @@ def cmd_advance(project, args):
             tickets, facts = load(project)
             return from_facts(facts[nn], receipts, leftovers=leftovers, merge_commit=merged)
         else:
-            if first and f.state == "in-ci":
-                receipts.append({"step": "ci", "status": "unavailable", "detail": "the forge comes in Phase 5"})
+            if first and f.state == "in-ci" and not f.forge:
+                receipts.append({"step": "ci", "status": "unavailable", "detail": "GitHub can't be reached, so CI and"
+                                                                                  " the merge wait"})
             break
         first = False
         commit(project, f, run, stage if run.ok else f"{stage} failed")
@@ -841,15 +965,19 @@ def cmd_status(project, args):
         note = ""
         if owner == "human":
             note = f"waiting: {code.lower().replace('_', ' ')}"
-        elif f.state == "implementing" and not t.worktree:
-            note = "STALE: no worktree found"
+        elif f.held:
+            note = f"another session's work, quiet {f.quiet_minutes} min"
+        elif f.in_flight and f.claimed_elsewhere:
+            note = "left by an ended session: rail next resumes it"
+        elif f.in_flight and f.claimed and not t.worktree:
+            note = f"no worktree here: rail next --ticket {nn} makes one"
         elif f.state in OPEN and last and age(last).endswith("d") and int(age(last)[:-1]) >= STALE_DAYS:
             note = f"STALE: no event for {age(last)[:-1]} days"
         elif f.state in ("new", "accepted") and code in ("WAITING_AFTER", "SCOPE_OVERLAP"):
             note = action["brief"]
         if f.pr and not note:
             note = f"PR #{f.pr['number']}"
-        rows.append({"ticket": nn, "title": t.ticket.title if t.ticket else "", "state": f.state, "owner": owner,
+        rows.append({"ticket": nn, "title": t.ticket.title if t.ticket else t.label, "state": f.state, "owner": owner,
                      "tier": f.tier, "last_event": age(last), "branch": t.name, "note": note,
                      **({"pr": f.pr["html_url"]} if f.pr else {})})
         if f.state in ("merged", "dropped"):
@@ -898,7 +1026,7 @@ def cmd_drop(project, args):
 
 def release_issue(project, f):
     """A dropped ticket from an issue: take the rail label off the issue and say so, so intake doesn't make the
-    ticket again. Labelling the issue again is how to retry (plan, section 7)."""
+    ticket again. Labelling the issue again is how to retry."""
     from .forge import ForgeError
 
     external = (f.ticket.get("external_id", "") if f.ticket else "") or ""
@@ -931,19 +1059,231 @@ def cmd_init(args):
                                  "detail": f"created {', '.join(created)}" if created else "all three exist"})
             except forge.ForgeError as e:
                 receipts.append({"step": "labels", "status": "unavailable", "detail": str(e)})
-    brief = ("Rail is installed. Next: rail next, which returns the init task: setup and verify, ## Areas, risk_paths,"
-             " rules and .worktreeinclude, for the person to confirm.")
+    brief = ("Rail is installed. Next: rail next, which returns the init task: the project's commands, ## Areas,"
+             " risk_paths and rules. " + ("In this cloud session you set them up and the person confirms by merging one"
+                                          " pull request." if cloud() else "You propose each and the person confirms."))
     return answer(code="INITIALISED", owner="agent", action={"kind": "script", "brief": brief, "command": "rail next"},
                   steps_=receipts, root=root)
 
 
 def init_task(project):
-    """The first `rail next` returns the init task until the project's config is on the base branch (plan, section 14)."""
+    """The first `rail next` returns the init task until the project's config is on the base branch."""
     if gitx.read_blobs([f"{project.base_ref}:.rail/config.toml"], project.root).get(f"{project.base_ref}:.rail/config.toml"):
         return None
-    from .init import INIT_TASK
-    brief = INIT_TASK.format(base=project.base, depth=project.config["map"]["depth"])
+    from .init import INIT_TASK, INIT_TASK_CLOUD
+    brief = (INIT_TASK_CLOUD if cloud() else INIT_TASK).format(base=project.base, depth=project.config["map"]["depth"])
     return answer(owner="agent", code="INIT_TASK", action={"kind": "agent_task", "brief": brief}, cwd=".")
+
+
+# --- saving work in flight ---------------------------------------------------------------
+
+
+def save_work(project, f, via):
+    """Commit a ticket's in-scope changes as they are and push them, with a `saved` event. Nothing is checked: the
+    point is that a machine that goes away takes at most a few minutes of work with it, and that other sessions see
+    the ticket is alive. Returns (paths saved, paths left because they are outside scope, the push's result), or
+    None when there was nothing to save and the ticket moved a moment ago."""
+    t = f.t
+    changes = gitx.dirty(t.worktree, exclude=[".rail/journal"])
+    inside = [c for c in changes if c.startswith(".rail/tickets/") or match_any(f.ticket.scope, c)]
+    outside = [c for c in changes if c not in inside]
+    quiet = f.quiet_minutes
+    if not inside and quiet is not None and quiet < project.config["claim"]["save_minutes"]:
+        return None
+    if inside:
+        # [skip ci]: GitHub starts no workflow for it. The check that counts runs on the commit a ship pushes.
+        gitx.git(["add", "-A", "--", *inside], t.worktree)
+        gitx.git(["commit", "--quiet", "-m", f"{t.id}: save work in progress [skip ci]", "--", *inside], t.worktree)
+    pushed = project.append_events(t, [event(t.id, "saved", via=via, files=len(inside))], "save [skip ci]")
+    return inside, outside, pushed
+
+
+def save_all(project, via, only=None):
+    """Save every ticket this session has in flight. Returns (receipts, briefs for the agent)."""
+    tickets, facts = load(project)
+    receipts, notes = [], []
+    for f in facts.values():
+        if only and f.id != only:
+            continue
+        if not (f.in_flight and f.claimed and f.worktree and f.ticket):
+            if only:
+                notes.append(f"Ticket {f.id} is {f.state}: there is no work in flight to save here.")
+            continue
+        if f.claimed_elsewhere:
+            if f.taken_from_me or only:
+                notes.append(first_match(f)[2]["brief"])
+            continue
+        saved = save_work(project, f, via)
+        if saved is None:
+            continue
+        inside, outside, pushed = saved
+        detail = f"ticket {f.id}: {len(inside)} files" + ("" if pushed == "ok" or not project.remote else f", push {pushed}")
+        receipts.append({"step": "save", "status": "ran", "result": "pass", "detail": detail})
+        if outside:
+            notes.append(f"Ticket {f.id}: not saved, because they are outside scope_paths: {', '.join(outside)}")
+        if pushed == "rejected":
+            notes.append(f"Ticket {f.id}: the push was refused, so its branch moved on the remote. Run rail next.")
+    return receipts, notes
+
+
+def cmd_save(project, args):
+    """Commit and push the work in flight as it is, with no checks: `rail save`, or `rail save NN` for one ticket.
+    The hooks run it at the end of each turn and every few minutes; an agent runs it where no hook does."""
+    project.sync()
+    only = None
+    key = getattr(args, "ticket", None)
+    if key:
+        only = project.find(key, project.tickets()).id
+    receipts, notes = save_all(project, "save", only)
+    brief = "\n".join(notes) or ("Saved." if receipts else "Nothing to save.")
+    return answer(code="SAVED", action={"kind": "rest", "brief": brief}, steps_=receipts)
+
+
+# --- provisioning: the machine carries the tools --------------------------------------
+
+
+MACHINE_SETUP = "machine-1"  # raise it when what provision writes onto a cloud machine changes
+
+
+def bin_dir():
+    """Where provision links rail on a cloud machine. RAIL_BIN_DIR moves it, for tests."""
+    return os.environ.get("RAIL_BIN_DIR") or "/usr/local/bin"
+
+
+def _provision_marker(project):
+    """One file per project on this machine: what provision last did here. It lives in the home folder, so an
+    environment's snapshot keeps it and a fresh VM starts without it."""
+    import hashlib
+    name = hashlib.sha256(project.root.encode()).hexdigest()[:16]
+    return os.path.join(os.path.expanduser("~"), ".cache", "rail", "provisioned", name)
+
+
+def _provision_wanted(project):
+    """The hash of what provision does on this kind of machine: the project's command, and in a cloud session
+    Rail's own part (the link and the machine's hooks)."""
+    import hashlib
+    command = project.config["commands"]["provision"]
+    if not command and not cloud():
+        return None  # nothing to do here
+    return hashlib.sha256(f"{command}\n{MACHINE_SETUP if cloud() else ''}".encode()).hexdigest()
+
+
+def provisioned(project):
+    wanted = _provision_wanted(project)
+    if wanted is None:
+        return True
+    path = _provision_marker(project)
+    if not os.path.exists(path):
+        return False
+    with open(path) as f:
+        return f.read().strip() == wanted
+
+
+def install_machine(project, run):
+    """On a cloud machine: link rail onto PATH, and write Rail's hooks into the machine's own Claude Code settings.
+    Claude Code loads a repository's hooks only in a session that starts with that one repository; the machine's
+    settings load in every session, so the guard and the saves also work above several repositories and in a
+    project's threads. Where the repository's hooks do run, these step aside."""
+    launcher = os.path.join(project.root, ".rail", "bin", "rail")
+    link = os.path.join(bin_dir(), "rail")
+    try:
+        if os.path.realpath(link) != os.path.realpath(launcher):
+            if os.path.lexists(link):
+                os.remove(link)
+            os.symlink(launcher, link)
+        linked = True
+    except OSError:
+        linked = False
+    command = link if linked else launcher
+    pulse = ('[ -n "$(find "$HOME/.cache/rail/pulse/${CLAUDE_CODE_SESSION_ID:-any}" -mmin -10 2>/dev/null)" ]'
+             f" || {command} hook pulse --machine")
+    wanted = [("SessionStart", None, f"{command} hook session-start --machine"),
+              ("PreToolUse", "Bash", f"{command} hook guard --machine"),
+              ("PostToolUse", None, pulse),
+              ("Stop", None, f"{command} hook stop --machine")]
+    path = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
+    try:
+        with open(path) as f:
+            settings = json.load(f)
+    except OSError:
+        settings = {}
+    except ValueError:
+        return run.record("machine", False, None, "the machine's ~/.claude/settings.json isn't valid JSON",
+                          output=f"{path} isn't valid JSON, so Rail's hooks weren't written into it.")
+    added = []
+    for name, matcher, hook_command in wanted:
+        mark = hook_command[hook_command.index("hook "):]  # such as "hook guard --machine"
+        entries = settings.setdefault("hooks", {}).setdefault(name, [])
+        if any(mark in json.dumps(entry) for entry in entries):
+            continue
+        entries.append({**({"matcher": matcher} if matcher else {}), "hooks": [{"type": "command", "command": hook_command}]})
+        added.append(name)
+    if added:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(settings, f, indent=2)
+            f.write("\n")
+    detail = ("rail linked into " + bin_dir() if linked else "rail not linked (no write access to " + bin_dir() + ")")
+    return run.record("machine", True, None, detail + ("; hooks written to ~/.claude/settings.json" if added
+                                                       else "; the machine's hooks are there already"))
+
+
+def run_provision(project, run):
+    """What a machine made for the work gets: on a cloud machine Rail's own part, then [commands] provision as
+    root. Notes that it ran. Returns whether it passed."""
+    import shlex
+
+    passed = install_machine(project, run) if cloud() else True
+    command = project.config["commands"]["provision"]
+    if passed and command:
+        as_root = command
+        if os.geteuid() != 0 and subprocess.run(["sudo", "-n", "true"], capture_output=True).returncode == 0:
+            as_root = f"sudo -n -E sh -c {shlex.quote(command)}"  # a CI runner isn't root, and its sudo asks no password
+        code, output, ms = steps.run_shell(as_root, project.root, {"RAIL_BASE": project.base_ref},
+                                           project.config["commands"]["timeout_secs"])
+        passed = run.record("provision", code == 0, None, "timeout" if code is None else f"exit {code}", ms,
+                            output=f"$ {command}\n{steps.tail(output)}")
+    if passed:
+        path = _provision_marker(project)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(_provision_wanted(project) + "\n")
+    return passed
+
+
+def provision_task(project):
+    """In a cloud session, the first `next` on a machine that hasn't been provisioned says so."""
+    if not cloud() or provisioned(project):
+        return None
+    return answer(owner="agent", code="PROVISION", cwd=".",
+                  action={"kind": "script", "brief": "rail provision", "command": "rail provision"})
+
+
+def cmd_provision(project, args):
+    """Get a machine made for the work ready: on a cloud machine, link rail and write the machine's hooks; then
+    [commands] provision, which installs what setup and verify need, once per machine. It runs in a cloud session
+    and on a CI runner. A person's own machine is theirs."""
+    command = project.config["commands"]["provision"]
+    if not disposable():
+        brief = ("This is your own machine, so Rail installs nothing here." + (
+            f" In a cloud session and in CI it runs:\n  {command}\nInstall the same tools your own way."
+            if command else " No provision command is set ([commands] provision in .rail/config.toml)."))
+        return answer(owner="human" if command else "none", code="PROVISION_LOCAL",
+                      action={"kind": "human_wait" if command else "rest", "brief": brief})
+    if _provision_wanted(project) is None:
+        return answer(code="NO_WORK", action={"kind": "rest", "brief": "No provision command is set ([commands]"
+                                                                       " provision in .rail/config.toml)."})
+    if provisioned(project) and not args.force:
+        return answer(code="PROVISIONED", action={"kind": "rest", "brief": "This machine is provisioned already;"
+                                                                           " rail provision --force runs it again."})
+    run = steps.Run(project, type("T", (), {"id": ""})())
+    passed = run_provision(project, run)
+    brief = ("Provisioned. Next: rail next" if passed else
+             f"Provisioning failed at '{run.failure[0]}':\n{run.failure[1]}\n\nFix [commands] provision in"
+             " .rail/config.toml (a HIGH ticket), or the machine, then run: rail provision")
+    return answer(owner="agent", code="PROVISIONED" if passed else "PROVISION_FAILED", steps_=run.steps, cwd=".",
+                  action={"kind": "script" if passed else "agent_task", "brief": brief,
+                          **({"command": "rail next"} if passed else {})})
 
 
 def cmd_docs(args):
@@ -968,7 +1308,7 @@ def cmd_doctor(project, args):
 
 
 def cmd_ci(project, args):
-    """The `rail` check: the ship checks again, on the PR head (plan, section 11). It writes nothing."""
+    """The `rail` check: the ship checks again, on the PR head. It writes nothing."""
     from .state import raised_tier
 
     head = "HEAD"
@@ -978,6 +1318,11 @@ def cmd_ci(project, args):
     text = gitx.read_blobs([f"{head}:{ticket_path(nn)}"], project.root).get(f"{head}:{ticket_path(nn)}") if nn else None
     run = steps.Run(project, type("T", (), {"id": nn or ""})())
     changed = project.changed_files(head)
+    if disposable() and project.config["commands"]["provision"] and not provisioned(project):
+        # The runner is made for this run, like a cloud VM: it gets the same tools before any check needs them.
+        if not run_provision(project, run):
+            return answer(nn, code="CI_FAIL", action={"kind": "rest", "brief": f"Failed at 'provision':\n{run.failure[1]}"},
+                          steps_=run.steps)
     if text is None:
         # A PR with no ticket: the rail init PR, Dependabot, a person's own PR.
         tier, _ = raised_tier(project, changed)
@@ -1061,11 +1406,13 @@ class _Parser(argparse.ArgumentParser):
 
 
 def parser():
-    p = _Parser(prog="rail", description="Keeps coding agents on the rail: what is legal next, and what counts as done.")
+    # allow_abbrev=False: `--own` must not pass for `--owner`, which the guard asks a person about.
+    p = _Parser(prog="rail", description="Keeps coding agents on the rail: what is legal next, and what counts as done.",
+                allow_abbrev=False)
     sub = p.add_subparsers(dest="verb", required=True, parser_class=_Parser)
 
     def verb(name, help_, ticket=True):
-        v = sub.add_parser(name, help=help_)
+        v = sub.add_parser(name, help=help_, allow_abbrev=False)
         v.add_argument("--json", action="store_true", help="answer in JSON")
         if ticket:
             v.add_argument("ticket", nargs="?", help="ticket ID or external id")
@@ -1102,16 +1449,21 @@ def parser():
     intake.add_argument("--title")
     intake.add_argument("--brief", help="a file with the request, verbatim")
     verb("sweep", "review what merged without a review, and turn its findings into tickets", ticket=False)
+    verb("save", "commit and push the work in flight as it is, with no checks")
+    provision = verb("provision", "install what the checks need on this machine (cloud sessions and CI only)",
+                     ticket=False)
+    provision.add_argument("--force", action="store_true", help="run it again on a machine that has it")
     verb("init", "set this project up for Rail", ticket=False)
     verb("doctor", "check the setup and print what's missing", ticket=False)
     verb("ci", "the rail check: the ship checks again on a pull request's head", ticket=False)
     hook = sub.add_parser("hook")  # internal: Claude Code hooks call it; not a verb
     hook.add_argument("name", choices=sorted(hooks.HOOKS))
+    hook.add_argument("--machine", action="store_true")  # from the machine's settings, not the repository's
     return p
 
 
 def run_pack(argv):
-    """`rail NAME ...` runs a pack's bin/NAME (plan, section 18). None when NAME isn't an installed pack."""
+    """`rail NAME ...` runs a pack's bin/NAME. None when NAME isn't an installed pack."""
     if not argv or argv[0] in VERBS or argv[0].startswith("-") or argv[0] == "hook":
         return None
     try:
@@ -1135,7 +1487,7 @@ def main(argv=None):
         if getattr(args, "ticket_opt", None):
             args.ticket = args.ticket_opt
         if args.verb == "hook":
-            return hooks.run(args.name)
+            return hooks.run(args.name, args.machine)
         if args.verb == "init":
             result = cmd_init(args)
         elif args.verb == "docs":
