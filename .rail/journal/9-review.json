@@ -136,6 +136,31 @@
           "id": "F7"
         }
       ]
+    },
+    {
+      "run": 5,
+      "role": "review",
+      "patch_id": "2bce743cf7a88b1ce1cad2467bb9918c454a1702",
+      "head": "cbc98fad2754",
+      "tier": "HIGH",
+      "at": "2026-11-12T16:27:51Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.6105911999999996,
+      "summary": "Ran all six Done Contract checks (pass, and they pass in CI on the shipped head, where only the pending review is red), diffed the vendored engine, pack, ruleset, workflow, template and settings rules against the framework at the SOURCE commit (identical), ran the framework's 150 tests at that commit (pass), and re-ran the F1\u2013F7 reproductions for the guard plus neighbouring spellings. F1\u2013F7 are fixed; one further guard spelling of the F3 kind still gets through.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 339,
+          "claim": "A `cd` is recognised only as the first word after wrappers and keywords, and `builtin` and `eval` are neither. So after `cd OTHER_REPO &&`, `builtin cd - && git push origin main` (or `eval cd - && ...`, or `gh pr merge 5` in place of the push) is still judged as the other repository's and allowed, although the shell is back in this project; this is F3's case in one more spelling.",
+          "check": "A guard test that `cd OTHER && builtin cd - && git push origin main` and the same with `eval cd -` are denied, next to the existing keyword-spelling tests.",
+          "evidence": {
+            "command": "Piped each command line to `RAIL_CLOUD=0 .rail/bin/rail hook guard` as a Bash PreToolUse event with cwd set to the ticket's worktree; OTHER is another git repository on branch main (prefix `cd OTHER && ` trimmed from the output).",
+            "output": "allow <= builtin cd - && git push origin main\nallow <= builtin cd - && gh pr merge 5\nallow <= eval cd - && git push origin main\n\"permissionDecision\": \"deny\" <= command cd - && git push origin main\n\"permissionDecision\": \"deny\" <= cd - >/dev/null && git push origin main"
+          },
+          "id": "F8"
+        }
+      ]
     }
   ]
 }
