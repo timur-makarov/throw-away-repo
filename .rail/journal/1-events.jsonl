@@ -1,2 +1,12 @@
 {"v":1,"at":"2026-11-12T11:33:16Z","ticket":"1","event":"accepted","by":"engine","via":"lint","tier":"LOW","contract":"d165cf92935f","done":"8848e8ed14d1","scope_paths":["calc/__init__.py","tests/test_calc.py"]}
 {"v":1,"at":"2026-11-12T11:33:23Z","ticket":"1","event":"claimed","session":"64993a07-26e3-5628-bca6-245bef70baf9","takeover":false}
+{"v":1,"at":"2026-11-12T11:33:41Z","ticket":"1","event":"step","step":"ticket-lint","status":"ran","result":"pass","patch_id":"638cf78f58b6e8ca931f361cccafd9035b995c7a"}
+{"v":1,"at":"2026-11-12T11:33:41Z","ticket":"1","event":"step","step":"assumptions","status":"ran","result":"pass","patch_id":"638cf78f58b6e8ca931f361cccafd9035b995c7a"}
+{"v":1,"at":"2026-11-12T11:33:41Z","ticket":"1","event":"step","step":"scope","status":"ran","result":"pass","patch_id":"638cf78f58b6e8ca931f361cccafd9035b995c7a"}
+{"v":1,"at":"2026-11-12T11:33:41Z","ticket":"1","event":"step","step":"rules","status":"ran","result":"pass","patch_id":"638cf78f58b6e8ca931f361cccafd9035b995c7a"}
+{"v":1,"at":"2026-11-12T11:33:41Z","ticket":"1","event":"step","step":"size","status":"ran","result":"pass","patch_id":"638cf78f58b6e8ca931f361cccafd9035b995c7a","detail":"size 8/300"}
+{"v":1,"at":"2026-11-12T11:33:41Z","ticket":"1","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":"638cf78f58b6e8ca931f361cccafd9035b995c7a"}
+{"v":1,"at":"2026-11-12T11:33:41Z","ticket":"1","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"638cf78f58b6e8ca931f361cccafd9035b995c7a","detail":"exit 0","duration_ms":112}
+{"v":1,"at":"2026-11-12T11:33:41Z","ticket":"1","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"638cf78f58b6e8ca931f361cccafd9035b995c7a","detail":"python3 -c \"import calc; assert calc.sub(5, 3) == 2\"","duration_ms":19}
+{"v":1,"at":"2026-11-12T11:33:41Z","ticket":"1","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"638cf78f58b6e8ca931f361cccafd9035b995c7a","detail":"python3 -m unittest discover -s tests -q","duration_ms":65}
+{"v":1,"at":"2026-11-12T11:33:41Z","ticket":"1","event":"shipped","patch_id":"638cf78f58b6e8ca931f361cccafd9035b995c7a","head":"45e8dbf6c0d8","tier":"LOW","size":8}
