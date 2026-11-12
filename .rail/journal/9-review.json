@@ -886,6 +886,33 @@
           "id": "F43"
         }
       ]
+    },
+    {
+      "run": 27,
+      "role": "refuter",
+      "patch_id": "7fa7640ffdfe9f0a454349886a758d18a86a0e53",
+      "head": "73ef9b1eff0a",
+      "tier": "HIGH",
+      "at": "2026-11-12T19:47:04Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 1.6532406,
+      "summary": "F42 holds. I ran the three commands through `rail hook guard` with this change's engine and with origin/main's engine (RAIL_CLOUD=0, cwd = the ticket worktree): the new engine passes all three, main's denies all three, and bash ends up in this project's worktree after the `cd $PWD`. The controls behave as intended (bare `gh pr merge 5` is denied; `cd other && gh pr merge 5` passes), so the hole is specifically `_expand` trusting a `$PWD` the command reassigned.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 268,
+          "repeats": "F42",
+          "claim": "`_expand` fills `$PWD` with the directory the guard believes the shell is in, but the command can reassign PWD first. `cd /other/repo && PWD=<this worktree> && cd $PWD && gh pr merge 5` (also `git push origin HEAD:main` and `git push -f origin x`) passes the guard while bash runs it in this project; origin/main's engine denies all three, so this is a fail-open regression in the guard the ticket sets out to close.",
+          "check": "A guard test that a command assigning PWD (`PWD=...`, `export PWD=...`) before `cd $PWD` is judged as this project's: `cd OTHER && PWD=ROOT && cd $PWD && gh pr merge 5`, `... && git push origin HEAD:main` and `... && git push -f origin x` must each return deny.",
+          "evidence": {
+            "command": "for each command: printf '%s' '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":CMD},\"cwd\":W}' | RAIL_CLOUD=0 .rail/bin/rail hook guard   (new engine), and the same through origin/main's engine extracted with `git archive origin/main .rail`; then `cd S/other && PWD=W && cd $PWD && pwd` in bash. W=/home/user/throw-away-repo/.claude/worktrees/9, S/other = a scratch git repository.",
+            "output": "new engine: no output (pass) for all three:\n  cd S/other && PWD=W && cd $PWD && gh pr merge 5\n  cd S/other && PWD=W && cd $PWD && git push origin HEAD:main\n  cd S/other && PWD=W && cd $PWD && git push -f origin x\norigin/main engine:\n  deny: gh pr merge merges outside the engine: rail advance merges a shipped ticket.\n  deny: a push to main: only the engine's merge changes it.\n  deny: a force push rewrites history others may have.\nbash pwd after `cd S/other && PWD=W && cd $PWD`: /home/user/throw-away-repo/.claude/worktrees/9\ncontrols (new engine): `gh pr merge 5` -> deny; `cd S/other && gh pr merge 5` -> pass"
+          },
+          "id": "F42"
+        }
+      ],
+      "disputes": "F42"
     }
   ]
 }
