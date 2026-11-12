@@ -1,1 +1,2 @@
 {"v":1,"at":"2026-11-12T11:33:16Z","ticket":"1","event":"accepted","by":"engine","via":"lint","tier":"LOW","contract":"d165cf92935f","done":"8848e8ed14d1","scope_paths":["calc/__init__.py","tests/test_calc.py"]}
+{"v":1,"at":"2026-11-12T11:33:23Z","ticket":"1","event":"claimed","session":"64993a07-26e3-5628-bca6-245bef70baf9","takeover":false}
