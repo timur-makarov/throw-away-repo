@@ -1,0 +1,1 @@
+{"v":1,"at":"2026-11-12T11:46:52Z","ticket":"7","event":"accepted","by":"engine","via":"lint","tier":"LOW","contract":"2f67c1d7de03","done":"a0b57cecb78d","scope_paths":["calc/__init__.py","calc/stats.py","tests/test_calc.py","tests/test_stats.py"]}
