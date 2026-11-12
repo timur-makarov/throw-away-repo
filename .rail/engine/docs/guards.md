@@ -41,8 +41,14 @@ auto mode included, which is why `sudo` and the like are asked by the hook and n
 **It protects this project's branches, not every repository.** After `cd DIR &&`, or with `git -C DIR`, a
 command in another repository is left alone. Whatever the guard can't follow (`cd -`, `popd`, a subshell, a
 `cd` before `;` or `||`, `--git-dir`, a variable other than `$HOME` and `$PWD`) is judged as this
-project's. A command after a shell keyword, as in `then git push -f` or `{ cd -; ... }`, is read as that
-command. A `gh` merge is judged by the repository it names.
+project's, and so is what follows a sourced file or an `eval` of words the guard can't read. A `gh` merge
+is judged by the repository it names.
+
+**It reads the command that runs.** A command after a shell keyword (`then git push -f`, `{ cd -; ... }`),
+behind a wrapper (`sudo -u root`, `env`, `timeout 60`, `xargs`, `nice`) or given by its path
+(`/usr/bin/git`) is read as that command. So are the commands a line hands to a shell: `bash -c "..."` and
+`eval ...`. A script file is not read, and neither is a command another program runs (`find -exec`,
+`make`): the ruleset on GitHub is what holds there.
 
 **A repository's hooks and permission rules load only in a session that starts with that one
 repository.** For a cloud session with several repositories, or a project thread, `rail provision` writes

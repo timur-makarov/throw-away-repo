@@ -8,7 +8,18 @@ import os
 import re
 import shlex
 
-WRAPPERS = {"sudo", "env", "command", "exec", "time", "nohup", "nice"}
+# Commands that run another command. The guard judges the command inside: `timeout 60 git push -f` is a push.
+WRAPPERS = {"sudo", "doas", "env", "command", "builtin", "exec", "time", "timeout", "nohup", "nice", "ionice",
+            "stdbuf", "setsid", "xargs"}
+# A wrapper's options that take a value, and its own arguments before the command (the duration of timeout).
+WRAPPER_VALUED = {"sudo": {"-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U", "-r", "-t"}, "doas": {"-u", "-C"},
+                  "env": {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"}, "exec": {"-a"},
+                  "time": {"-o", "-f"}, "timeout": {"-s", "--signal", "-k", "--kill-after"},
+                  "nice": {"-n", "--adjustment"}, "ionice": {"-c", "-n", "-p"}, "stdbuf": {"-i", "-o", "-e"},
+                  "xargs": {"-n", "-P", "-I", "-L", "-d", "-E", "-s", "-a"}}
+WRAPPER_ARGUMENTS = {"timeout": 1}
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+BY_PATH = {"git", "gh", "rm"} | SHELLS  # /usr/bin/git push -f is a push too
 # Shell words that come before a command without being one: `then git push -f` and `{ cd -; ... }` are still a push
 # and a cd.
 KEYWORDS = {"{", "!", "if", "then", "elif", "else", "do", "while", "until"}
@@ -33,26 +44,27 @@ def _tokens(part):
     return found
 
 
-def pipelines(line, unwrap=True):
+def pipelines(line, unwrap=True, depth=0):
     """Each line's pipelines, as lists of simple commands (word lists). ;, &&, || and & end a pipeline; | joins one.
-    With unwrap, `sudo`, `env`, VAR=value and the like are dropped from the front of each command."""
+    With unwrap, `sudo`, `env`, VAR=value and the like are dropped from the front of each command. The pipelines
+    of a script handed to a shell (`bash -c "..."`, `eval ...`) come after the pipeline that runs it."""
     keep = _unwrap if unwrap else (lambda words: words)
     found = []
     for part in line.splitlines():
         tokens = _tokens(part)
-        pipeline, words = [], []
-        for token in tokens:
-            if token in ("|", "|&"):
+        pipeline, words, scripts = [], [], []
+        for token in [*tokens, ";"]:
+            if token in SEPARATORS:
                 pipeline.append(keep(words))
+                scripts.append(_script(_unwrap(words), depth))
                 words = []
-            elif token in SEPARATORS:
-                pipeline.append(keep(words))
-                found.append(pipeline)
-                pipeline, words = [], []
+                if token not in ("|", "|&"):
+                    found.append(pipeline)
+                    for script in filter(None, scripts):
+                        found += pipelines(script, unwrap, depth + 1)
+                    pipeline, scripts = [], []
             elif not set(token) <= set("()"):
                 words.append(token)
-        pipeline.append(keep(words))
-        found.append(pipeline)
     return [[words for words in pipeline if words] for pipeline in found]
 
 
@@ -61,31 +73,66 @@ def commands(line):
     return [words for pipeline in pipelines(line) for words in pipeline]
 
 
-def sequence(line):
+def sequence(line, depth=0):
     """Each simple command as (its words as written, its words unwrapped, the operator after it, whether its line
-    uses parentheses). The operator and the parentheses say whether a `cd` still holds for the next command."""
+    uses parentheses). The operator and the parentheses say whether a `cd` still holds for the next command.
+    The commands of a script handed to a shell come after the command that runs it. `eval` runs them in this
+    shell, so the last one carries the eval's operator; `bash -c` runs them in a child, so they count as grouped:
+    a cd in there says nothing about where the next command runs."""
     found = []
     for part in line.splitlines():
         tokens = _tokens(part)
         grouped = any(token and set(token) <= set("()") for token in tokens)
         words = []
-        for token in tokens:
-            if token in SEPARATORS:
-                found.append((words, _unwrap(words), token, grouped))
+        for token in [*tokens, ""]:
+            if token in SEPARATORS or token == "":
+                command = _unwrap(words)
+                found.append((words, command, token, grouped))
+                inner = sequence(_script(command, depth) or "", depth + 1)
+                if inner and command[0] == "eval":
+                    inner[-1] = (*inner[-1][:2], token, inner[-1][3])
+                elif inner:
+                    inner = [(*item[:3], True) for item in inner]
+                found += inner
                 words = []
             elif not set(token) <= set("()"):
                 words.append(token)
-        found.append((words, _unwrap(words), "", grouped))
     return [item for item in found if item[1]]
 
 
 def _unwrap(words):
-    """Drop `sudo -E`, `env`, VAR=value and the like, so `sudo git push -f` is still a push."""
+    """The command inside its wrappers: `sudo -u root`, `env`, `timeout 60`, VAR=value, a shell keyword. So
+    `sudo git push -f` and `timeout 60 /usr/bin/git push -f` are still a push."""
     while words and (words[0] in WRAPPERS or words[0] in KEYWORDS or ("=" in words[0] and not words[0].startswith("-"))):
-        words = words[1:]
-        while words and words[0].startswith("-"):  # the wrapper's own options, such as sudo -E
-            words = words[1:]
+        wrapper, words = words[0], words[1:]
+        valued = WRAPPER_VALUED.get(wrapper, ())
+        while words and words[0].startswith("-"):  # the wrapper's own options, such as sudo -E, and their values
+            words = words[2:] if words[0] in valued else words[1:]
+        words = words[WRAPPER_ARGUMENTS.get(wrapper, 0):]
+    if words and "/" in words[0] and os.path.basename(words[0]) in BY_PATH:
+        words = [os.path.basename(words[0]), *words[1:]]
     return words
+
+
+def _moved(raw, words):
+    """Whether a wrapper runs the command in another directory: env -C DIR, sudo -D DIR."""
+    return any(w in ("-C", "-D") or w.startswith("--chdir") for w in raw[:len(raw) - len(words)])
+
+
+def _script(words, depth=0):
+    """The command line a command hands to a shell: the word after -c in `bash -c "..."`, the words of an `eval`.
+    None for any other command, and below a few levels of nesting."""
+    if not words or depth >= 3:
+        return None
+    if words[0] == "eval":
+        return " ".join(words[1:])
+    if words[0] in SHELLS:
+        i = 1
+        while i < len(words) and words[i].startswith(("-", "+")):
+            if words[i].startswith("-") and not words[i].startswith("--") and "c" in words[i]:
+                return words[i + 1] if i + 1 < len(words) else None
+            i += 2 if words[i] in ("-o", "+o", "-O", "+O") else 1
+    return None
 
 
 def _git(words):
@@ -338,10 +385,12 @@ def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
             return "only the engine writes .rail/journal/; record a finding's answer with rail answer"
         if words[0] in ("cd", "pushd", "popd"):
             here = _after_cd(words, operator, grouped, here)
+        elif words[0] in ("source", ".") or (words[0] == "eval" and re.search(r"[$`]", " ".join(words[1:]))):
+            here = None  # a file's commands, or words the guard can't read, may move the shell
         elif words[0] == "git":
             sub, args = _git(words)
             where = _git_dir(words, here)
-            if any(w.startswith(("GIT_DIR=", "GIT_WORK_TREE=")) for w in raw):
+            if any(w.startswith(("GIT_DIR=", "GIT_WORK_TREE=")) for w in raw) or _moved(raw, words):
                 where = None
             found = locate(where) if locate and where is not None else None
             ours, at = found if found else (True, branch)
@@ -367,7 +416,7 @@ def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
             if named and repo and repo not in named:
                 continue  # it names only other repositories
             if not named:
-                found = locate(here) if locate and here is not None else None
+                found = locate(here) if locate and here is not None and not _moved(raw, words) else None
                 if found and not found[0]:
                     continue  # it names none, and it runs in another repository
             if words[1:3] == ["pr", "merge"]:
