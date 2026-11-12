@@ -21,3 +21,7 @@ def div(a, b):
     if b == 0:
         raise CalcError("division by zero")
     return a / b
+
+
+def power(base, exponent):
+    return base ** exponent
