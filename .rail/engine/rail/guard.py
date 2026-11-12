@@ -456,44 +456,43 @@ def _gh_sub(words):
     return found
 
 
-def _gh_target(raw, words, repo):
-    """Whose repository a gh command is about: "ours", "other", or None when it names none and where it runs
-    decides. It is another repository's only when every word that names one agrees and nothing points here:
+REPO_NAME = r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"
 
-    - this project's OWNER/NAME anywhere in the command, an option's value included, makes it ours;
-    - the hints are GH_REPO= in front of the command, -R and --repo, an argument that is a github.com URL, and for
-      `gh api` every word with repos/OWNER/NAME/ in it;
-    - a hint the guard can't read (a variable), or an api path for the current repository (repos/{owner}/{repo},
-      repos/:owner/:repo) next to other hints, leaves it to where the command runs.
+
+def _gh_target(raw, words, repo):
+    """Whose repository a gh command is about: "ours", "other", or None when where it runs decides.
+
+    It is another repository's only on proof that nothing can take back:
+    - `gh pr merge` and the like: -R or --repo with another OWNER/NAME, or a pull request URL of another repository
+      as an argument, and every such word agrees;
+    - a merge through `gh api`: every word with a merge path names another repository in that path itself
+      (repos/OWNER/NAME/pulls/N/merge). A path by id, or for the current repository, proves nothing.
+    This project's name anywhere in the command makes it ours, and so does a name the guard can't read (a
+    variable). GH_REPO is no proof either way that the command is another's: a wrapper may unset it (env -u, env
+    -i), and `gh api` reads it only to fill {owner}/{repo}.
     """
     if not repo:
         return None  # this project's own name isn't known, so no name can be told from it
     if any(repo in w.lower() for w in raw):
         return "ours"
-    hints, unsure = [], False
-    assigned = [w.split("=", 1)[1] for w in raw[:len(raw) - len(words)] if w.startswith("GH_REPO=")]
-    if assigned and assigned[-1]:  # the last one counts, as in the shell; an empty one leaves it to the checkout
-        hints.append(assigned[-1])
+    if any(w.startswith("GH_REPO=") and re.search(r"[$`]", w) for w in raw):
+        return "ours"
+    if _gh_sub(words)[:1] == ["api"]:
+        merges = [w for w in words[2:] if "/pulls/" in w and "/merge" in w]
+        named = [re.match(rf"(?:https://api\.github\.com)?/?repos/({REPO_NAME})/pulls/\d+/merge", w) for w in merges]
+        return "other" if merges and all(named) else None
+    hints = []
     for i, w in enumerate(words):
         if w in ("-R", "--repo") and i + 1 < len(words):
             hints.append(words[i + 1])
         elif w.startswith("--repo="):
             hints.append(w.split("=", 1)[1])
-        elif i > 1 and re.match(r"(?:https?://)?(?:www\.)?github\.com/", w) and not words[i - 1].startswith("-") \
-                and _gh_sub(words)[:1] != ["api"]:
+        elif i > 1 and re.match(r"(?:https?://)?(?:www\.)?github\.com/", w) and not words[i - 1].startswith("-"):
             hints.append(re.sub(r"^https?://", "", w))
-    if _gh_sub(words)[:1] == ["api"]:
-        for w in words[2:]:
-            for m in re.finditer(r"(?:^|[/=])repos/([^/\s]+)/([^/\s]+)/", w):
-                if re.match(r"[{:]", m.group(1)) or re.match(r"[{:]", m.group(2)):
-                    # The current repository: GH_REPO in front of the command says which, or else the checkout.
-                    unsure = unsure or not (assigned and assigned[-1])
-                else:
-                    hints.append(f"{m.group(1)}/{m.group(2)}")
-    names = [_repo_name(hint) for hint in hints]
-    if not hints or unsure or not all(names):
-        return None if all(names) or not hints else "ours"  # a hint that can't be read may well mean this project
-    return "other"
+    if not hints:
+        return None
+    readable = all(not re.search(r"[$`]", hint) and _repo_name(hint) for hint in hints)
+    return "other" if readable else "ours"
 
 
 def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):

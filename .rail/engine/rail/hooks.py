@@ -127,7 +127,10 @@ def guard():
             return (common == ours, there.strip())
 
         repo = github_repo(project) if project.remote else None
-        reason = rules.deny(command, project.base, branch, cwd=cwd, locate=locate, repo=repo, cloud=in_cloud)
+        # Where the guard can't follow the command, it is judged on a branch of this project's. From a folder above
+        # the repositories that is the branch the project's own checkout is on.
+        at = branch if inside else gitx.git(["rev-parse", "--abbrev-ref", "HEAD"], project.root, check=False).stdout.strip()
+        reason = rules.deny(command, project.base, at, cwd=cwd, locate=locate, repo=repo, cloud=in_cloud)
         if reason:
             break
     if not reason:
