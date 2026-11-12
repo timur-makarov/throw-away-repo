@@ -152,10 +152,20 @@ def worktrees(cwd):
 
 
 def dirty(cwd, exclude=()):
-    """Uncommitted paths in a worktree, untracked files included."""
+    """Uncommitted paths in a worktree, untracked files included. A staged rename is both of its names: the old
+    one is a deletion."""
     spec = ["--", "."] + [f":(exclude){p}" for p in exclude]
     lines = git(["status", "--porcelain", "--untracked-files=all", *spec], cwd).stdout.splitlines()
-    return [line[3:].split(" -> ")[-1].strip('"') for line in lines]
+    return [name.strip('"') for line in lines for name in line[3:].split(" -> ")]
+
+
+def stage(cwd, paths):
+    """git add -A for these paths. A deletion that is staged already (git rm, the old name of a git mv) is passed
+    over: it is on disk and in the index no more, and git stops at a path it can't find."""
+    tracked = set(out(["ls-files", "--cached", "-z", "--", *paths], cwd).split("\0"))
+    left = [p for p in paths if p in tracked or os.path.lexists(os.path.join(cwd, p))]
+    if left:
+        git(["add", "-A", "--", *left], cwd)
 
 
 def push(cwd, remote, refspec, force_with_lease=None):

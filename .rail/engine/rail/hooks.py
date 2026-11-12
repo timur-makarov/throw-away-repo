@@ -145,8 +145,12 @@ def _save(via, data=None):
     cwd, inside, projects = _projects(data if data is not None else _input())
     notes = []
     for project in projects:
-        project.sync()
-        notes += save_all(project, via)[1]
+        try:
+            project.sync()
+            notes += save_all(project, via)[1]
+        except Exception as e:  # the hook goes on, and the agent hears of it: this work is not saved
+            notes.append(f"Rail could not save the work in flight in {project.root}: {e}\nRun rail save there to see"
+                         " why. Until it passes, a machine that goes away takes the unsaved work with it.")
     return notes
 
 
