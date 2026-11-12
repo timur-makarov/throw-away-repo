@@ -292,6 +292,31 @@
           "id": "F15"
         }
       ]
+    },
+    {
+      "run": 10,
+      "role": "review",
+      "patch_id": "7ed63b79ee44d19f0f76f414ef0ad137e912d34d",
+      "head": "eaf4299cf7fb",
+      "tier": "HIGH",
+      "at": "2026-11-12T17:23:56Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.9893274,
+      "summary": "Ran all six Done Contract checks (all pass), confirmed the vendored engine, pack, ruleset, workflow and ticket template are byte-identical to the framework at the commit in .rail/SOURCE, ran the framework's 158 tests against that engine (all pass), and probed the guard and the new claim, save and hold code with scratch scenarios. The earlier findings F1 to F14 no longer reproduce; one new advisory problem in the claim rules is reported.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/state.py",
+          "line": 167,
+          "claim": "`quiet_minutes` counts every journal event as the claiming session's sign of life, including the `continued` event another session writes when it records a person's `rail:go`. Sequence: run-1 claims a ticket and ends, the ticket waits for a person (HOLD, RETRY_CAP, STUCK_REVIEW, an amend), the person adds `rail:go`, and the run that the label triggers records it and then reports the ticket as another session's work, quiet 0 min, with NO_WORK; the ticket is not resumed until a later run at least 30 minutes on, although docs/cloud.md says the label event covers `rail:go`.",
+          "check": "A test on the fake GitHub: session run-1 claims a ticket with its events 45 minutes old, a person labels the pull request `rail:needs-you` and then `rail:go`, and `rail next` from session run-2 must answer with owner `agent` for that ticket, not NO_WORK with the ticket in `held`.",
+          "evidence": {
+            "command": "python3 /tmp/claude-0/-home-user-throw-away-repo--claude-worktrees-9/c614a1c5-559e-44a8-9b3a-6feeeb29f1f2/scratchpad/t_go.py  (framework harness on the identical engine; run-1's add and claim written with the clock 45 minutes back, then github.label(1, 'rail:needs-you'), github.label(1, 'rail:go'), and `rail next` from run-2, then from run-3)",
+            "output": "before go: human WAITING_HUMAN ['HOLD']\nafter go : none NO_WORK held= [{'ticket': '1', 'quiet_minutes': 0}]\nNo ticket to work on. New work starts with: rail add <ticket file>\nOther sessions are at work on: 1 (quiet 0 min). A ticket quiet for 30 min is resumed by the next rail next; rail next --ticket NN takes one now.\nnext run : none NO_WORK held= [{'ticket': '1', 'quiet_minutes': 0}]"
+          },
+          "id": "F16"
+        }
+      ]
     }
   ]
 }
