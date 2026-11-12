@@ -42,13 +42,16 @@ auto mode included, which is why `sudo` and the like are asked by the hook and n
 command in another repository is left alone. Whatever the guard can't follow (`cd -`, `popd`, a subshell, a
 `cd` before `;` or `||`, `--git-dir`, a variable other than `$HOME` and `$PWD`) is judged as this
 project's, and so is what follows a sourced file or an `eval` of words the guard can't read. A `gh` merge
-is judged by the repository it names.
+is judged by the repository it names with `-R`, `GH_REPO`, a pull request URL or the endpoint of `gh api`;
+a URL inside a message (`--body`, `-f`) names nothing.
 
 **It reads the command that runs.** A command after a shell keyword (`then git push -f`, `{ cd -; ... }`),
 behind a wrapper (`sudo -u root`, `env`, `timeout 60`, `xargs`, `nice`) or given by its path
-(`/usr/bin/git`) is read as that command. So are the commands a line hands to a shell: `bash -c "..."` and
-`eval ...`. A script file is not read, and neither is a command another program runs (`find -exec`,
-`make`): the ruleset on GitHub is what holds there.
+(`/usr/bin/git`) is read as that command. So are the commands a line hands to a shell: `bash -c "..."`,
+`eval ...`, `$(...)`, backticks, and a here-document fed to a shell (`bash <<EOF`). Text is not a command:
+a commit message or a pull request body that mentions `git push -f`, quoted over several lines or in a
+here-document, runs nothing and is left alone. A script file is not read, and neither is a `case` arm or a
+command another program runs (`find -exec`, `make`): the ruleset on GitHub is what holds there.
 
 **A repository's hooks and permission rules load only in a session that starts with that one
 repository.** For a cloud session with several repositories, or a project thread, `rail provision` writes

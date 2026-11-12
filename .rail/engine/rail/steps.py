@@ -141,7 +141,7 @@ def check(project, nn, ticket, ref, cwd, tier, run, patch_id, accepted=None):
         return _stop(run, "assumptions")
 
     changed = project.changed_files(ref)
-    outside = [p for p in changed if not match_any(ticket.scope, p)]
+    outside = [p for p in changed + project.other_tickets(ref, nn) if not match_any(ticket.scope, p)]
     if not run.record("scope", not outside, patch_id, f"outside scope: {', '.join(outside)}" if outside else None,
                       output=f"These files are outside scope_paths ({', '.join(ticket.scope)}):\n" + "\n".join(outside)):
         return _stop(run, "scope")

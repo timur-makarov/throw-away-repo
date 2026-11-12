@@ -4,6 +4,7 @@ Guards prevent mistakes; they are not a boundary. Permission rules in .claude/se
 can express, and this hook covers the rest.
 """
 
+import fnmatch
 import os
 import re
 import shlex
@@ -44,13 +45,105 @@ def _tokens(part):
     return found
 
 
+# A line that hands its here-document to a shell: bash <<EOF, cat <<EOF | sudo bash.
+FEEDS_SHELL = re.compile(r"(?:^|[|;&(`]\s*)(?:(?:\S+=\S*|sudo|env|exec|command|time|nohup)\s+(?:-\S+\s+)*)*"
+                         r"(?:\S*/)?(?:sh|bash|zsh|dash|ksh)\b")
+
+
+def _lines(text):
+    """A command text in the command lines the shell reads, each with whether it runs in a child shell.
+
+    A newline inside quotes or a substitution doesn't end a line, and a backslash before a newline joins two: a
+    commit message that mentions `git push -f` is not a push. A here-document's body is data and is left out,
+    unless its line hands it to a shell (`bash <<EOF`): then its lines are commands of a child shell. So are the
+    command lines inside $(...) and backticks, which come first.
+    """
+    try:
+        return _scan(text)
+    except Exception:  # judge more than the shell runs, never less
+        return [(part, False) for part in text.splitlines()]
+
+
+def _scan(text):
+    lines, nested, current = [], [], []
+    stack = []  # the substitutions that are open: (closing mark, the quote and parentheses outside, where it starts)
+    quote, parens = None, 0  # at this level: the open quote, and the open plain parentheses
+    waiting, row_start = [], 0  # here-documents whose body starts after this row: (delimiter, strip tabs, a script)
+    i, n = 0, len(text)
+
+    def close():
+        nonlocal quote, parens
+        mark, quote, parens, start = stack.pop()
+        nested.extend(part for part, child in _scan("".join(current[start:])) if not child)
+
+    while i < n:
+        c = text[i]
+        if c == "\n":
+            i += 1
+            for word, strip, script in waiting:
+                rows = text[i:].split("\n")
+                ends = [k for k, row in enumerate(rows) if (row.lstrip("\t") if strip else row) == word]
+                if not ends:
+                    continue  # no end in sight, so no here-document: what follows is read as commands
+                if script:
+                    nested.extend(part for part, child in _scan("\n".join(rows[:ends[0]])))
+                i = min(i + sum(len(row) + 1 for row in rows[:ends[0] + 1]), n)
+            waiting, row_start = [], i
+            if quote is None and not stack:
+                lines.append("".join(current))
+                current = []
+            else:
+                current.append("\n")
+            continue
+        if quote == "'":
+            quote = None if c == "'" else quote
+        elif c == "\\" and i + 1 < n:
+            if text[i + 1] != "\n":  # a backslash before a newline joins the two lines
+                current.append(text[i:i + 2])
+            i += 2
+            continue
+        elif c == '"':
+            quote = None if quote == '"' else '"'
+        elif c == "'" and quote is None:
+            quote = "'"
+        elif c == "`" and stack and stack[-1][0] == "`" and quote is None:
+            close()
+        elif c == "`" or text.startswith("$(", i):
+            current.append("`" if c == "`" else "$(")
+            stack.append(("`" if c == "`" else ")", quote, parens, len(current)))
+            quote, parens = None, 0
+            i += len(current[-1])
+            continue
+        elif quote is None and c == "(" and stack:
+            parens += 1
+        elif quote is None and c == ")" and stack and stack[-1][0] == ")":
+            if parens:
+                parens -= 1
+            else:
+                close()
+        elif quote is None and text.startswith("<<", i) and not text.startswith("<<<", i) and text[i - 1:i] != "<":
+            strip = text.startswith("<<-", i)
+            m = re.match(r"[ \t]*(?:'([^'\n]*)'|\"([^\"\n]*)\"|([^\s;&|()<>`]+))", text[i + 2 + strip:])
+            if m:
+                end = text.find("\n", i)
+                row = text[row_start:n if end < 0 else end]
+                word = next(g for g in m.groups() if g is not None).replace("\\", "")
+                waiting.append((word, strip, bool(FEEDS_SHELL.search(row))))
+        current.append(c)
+        i += 1
+    while stack:  # a substitution left open still runs what it has
+        close()
+    lines.append("".join(current))
+    return [(part, True) for part in nested if part.strip()] + [(part, False) for part in lines if part.strip()]
+
+
 def pipelines(line, unwrap=True, depth=0):
     """Each line's pipelines, as lists of simple commands (word lists). ;, &&, || and & end a pipeline; | joins one.
     With unwrap, `sudo`, `env`, VAR=value and the like are dropped from the front of each command. The pipelines
     of a script handed to a shell (`bash -c "..."`, `eval ...`) come after the pipeline that runs it."""
     keep = _unwrap if unwrap else (lambda words: words)
     found = []
-    for part in line.splitlines():
+    for part, child in _lines(line):
         tokens = _tokens(part)
         pipeline, words, scripts = [], [], []
         for token in [*tokens, ";"]:
@@ -80,9 +173,9 @@ def sequence(line, depth=0):
     shell, so the last one carries the eval's operator; `bash -c` runs them in a child, so they count as grouped:
     a cd in there says nothing about where the next command runs."""
     found = []
-    for part in line.splitlines():
+    for part, child in _lines(line):
         tokens = _tokens(part)
-        grouped = any(token and set(token) <= set("()") for token in tokens)
+        grouped = child or any(token and set(token) <= set("()") for token in tokens)
         words = []
         for token in [*tokens, ""]:
             if token in SEPARATORS or token == "":
@@ -276,12 +369,22 @@ def _downloads_into_interpreter(line):
             if os.path.basename(words[0]) in ("curl", "wget") and any(
                     _reads_program_from_stdin(later) for later in pipeline[i + 1:]):
                 return True
-    return any(SUBSTITUTED.search(part) for part in line.splitlines())
+    return any(SUBSTITUTED.search(part) for part, child in _lines(line))
 
 
 def _secret(word):
     name = os.path.basename(word.rstrip("/"))
     return bool(re.fullmatch(r"\.env(\..+)?", name)) and name not in SAFE_ENV
+
+
+# File names that say the file holds secrets: private keys and credential stores, besides .env files.
+SECRET_FILES = ("*.pem", "*.key", "*.p12", "*.pfx", "*.keystore", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", ".netrc")
+
+
+def holds_secrets(path):
+    """Whether a file's name says it holds secrets. A save leaves such a file out: it is pushed before any scan."""
+    name = os.path.basename(path.rstrip("/"))
+    return _secret(path) or any(fnmatch.fnmatch(name, pattern) for pattern in SECRET_FILES)
 
 
 def _wipes_disk(words):
@@ -335,18 +438,31 @@ def _repo_name(text):
     return f"{parts[0]}/{parts[1].removesuffix('.git')}".lower()
 
 
+def _gh_sub(words):
+    """A gh command's first two words past its options, so `gh pr -R owner/name merge 5` is `pr merge`."""
+    found, i = [], 1
+    while i < len(words) and len(found) < 2:
+        if not words[i].startswith("-"):
+            found.append(words[i])
+        i += 2 if words[i] in ("-R", "--repo", "--hostname") else 1
+    return found
+
+
 def _gh_named(raw, words):
-    """The repositories a gh command names, lower case: -R and --repo, GH_REPO=, a github.com URL, and the
-    endpoint of `gh api`. repos/{owner}/{repo} and repos/:owner/:repo name the current one, so they name nothing."""
+    """The repositories a gh command names, lower case: -R and --repo, GH_REPO=, an argument that is a github.com
+    URL, and the endpoint of `gh api`. A URL inside an option's value (--body, -f) names nothing: a merge message
+    that mentions another repository is still a merge here. Neither do repos/{owner}/{repo} and
+    repos/:owner/:repo, which mean the current one."""
     named = [_repo_name(w.split("=", 1)[1]) for w in raw if w.startswith("GH_REPO=")]
     for i, w in enumerate(words):
         if w in ("-R", "--repo") and i + 1 < len(words):
             named.append(_repo_name(words[i + 1]))
         elif w.startswith("--repo="):
             named.append(_repo_name(w.split("=", 1)[1]))
-        elif "github.com/" in w and not w.startswith("-"):
-            named.append(_repo_name(w[w.index("github.com/"):]))
-    if words[1:2] == ["api"]:
+        elif i > 1 and re.match(r"(?:https?://)?(?:www\.)?github\.com/", w) and not words[i - 1].startswith("-") \
+                and _gh_sub(words)[:1] != ["api"]:
+            named.append(_repo_name(re.sub(r"^https?://", "", w)))
+    if _gh_sub(words)[:1] == ["api"]:
         endpoint, i = None, 2
         while i < len(words) and endpoint is None:
             if words[i] in GH_API_VALUED:
@@ -355,7 +471,7 @@ def _gh_named(raw, words):
                 i += 1
             else:
                 endpoint = words[i]
-        m = re.match(r"/?repos/([^/]+)/([^/]+)/", endpoint or "")
+        m = re.search(r"(?:^|/)repos/([^/]+)/([^/]+)/", endpoint or "")
         if m and not re.match(r"[{:]", m.group(1)) and not re.match(r"[{:]", m.group(2)):
             named.append(f"{m.group(1)}/{m.group(2)}".lower())
     return [n for n in named if n]
@@ -374,7 +490,10 @@ def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
         return "piping a download into a shell runs code nobody has read"
     here = cwd
     repo = repo.lower() if repo else None
+    aimed = False  # an exported GIT_DIR or GIT_WORK_TREE points every later git command at a repository
     for raw, words, operator, grouped in sequence(line):
+        if words[0] in ("export", "declare", "typeset") and any(w.split("=")[0] in ("GIT_DIR", "GIT_WORK_TREE") for w in words[1:]):
+            aimed = True
         if _wipes_disk(words):
             return "this command can wipe a disk or a home folder"
         secret = next((w for w in words if _secret(w)), None)
@@ -390,7 +509,7 @@ def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
         elif words[0] == "git":
             sub, args = _git(words)
             where = _git_dir(words, here)
-            if any(w.startswith(("GIT_DIR=", "GIT_WORK_TREE=")) for w in raw) or _moved(raw, words):
+            if aimed or any(w.startswith(("GIT_DIR=", "GIT_WORK_TREE=")) for w in raw) or _moved(raw, words):
                 where = None
             found = locate(where) if locate and where is not None else None
             ours, at = found if found else (True, branch)
@@ -419,9 +538,9 @@ def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
                 found = locate(here) if locate and here is not None and not _moved(raw, words) else None
                 if found and not found[0]:
                     continue  # it names none, and it runs in another repository
-            if words[1:3] == ["pr", "merge"]:
+            if _gh_sub(words) == ["pr", "merge"]:
                 return "gh pr merge merges outside the engine: rail advance merges a shipped ticket"
-            if len(words) > 1 and words[1] == "api" and any("/merge" in w and "/pulls/" in w for w in words[2:]):
+            if _gh_sub(words)[:1] == ["api"] and any("/merge" in w and "/pulls/" in w for w in words[2:]):
                 return "a merge through gh api goes around the engine: rail advance merges a shipped ticket"
     return None
 

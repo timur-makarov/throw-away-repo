@@ -75,6 +75,10 @@ class Facts:
         forge = getattr(project, "forge", None)
         self.forge = forge if forge is not None and forge.ok else None
         self.pr = self.forge.pr(t.name) if self.forge and t.name else None
+        if self.forge and not t.name and t.on_base:
+            # Its branch is gone. Only a merged pull request from that branch shows the ticket reached the base
+            # branch by its own pull request, and not inside another ticket's merge.
+            self.pr = self.forge.merged_from(t.id)
         self.labels = self.forge.labels(self.pr) if self.pr else set()
         self.ci, self.ci_failing, self.conflict, self.behind, self.pushed = None, [], False, False, None
         self.merge_note = project.cache_read("merge", t.id)
@@ -194,9 +198,11 @@ class Facts:
         ships = [e.get("at", "") for e in t.events if e.get("event") == "shipped"]
         if t.merged or (merged_at and ships and merged_at >= max(ships)):
             return "merged"
-        # A pull request merged before its ticket shipped, or a ticket file on the base branch with no branch and no
-        # ship: a person merged the contract. That is their approval; the work is still to do.
-        self.contract_merged = not self.dropped_event and (bool(merged_at) or (t.on_base and not t.name and not ships))
+        # The ticket's own pull request was merged before the ticket shipped. The engine merges only what has
+        # shipped, so a person merged the contract: that is their approval, and the work is still to do. A ticket
+        # file that is on the base branch with no such pull request proves nothing: it may have come in with
+        # another ticket's merge.
+        self.contract_merged = not self.dropped_event and bool(merged_at)
         if self.dropped_event or (not t.name and not self.contract_merged):
             return "dropped"  # a dropped event, or the ID is all that is left: its branch is gone
         if self.pr and self.pr.get("state") == "closed" and not merged_at:

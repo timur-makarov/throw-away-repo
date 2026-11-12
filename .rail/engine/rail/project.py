@@ -207,6 +207,12 @@ class Project:
     def changed_files(self, ref):
         return gitx.out(["diff", "--name-only", f"{self.base_ref}...{ref}", *PRODUCT_SPEC], self.root).splitlines()
 
+    def other_tickets(self, ref, nn):
+        """The files under .rail/tickets a branch changes, ticket NN's own left out. A branch carries one ticket:
+        another ticket's file on it would reach the base branch with nobody's approval."""
+        changed = gitx.out(["diff", "--name-only", f"{self.base_ref}...{ref}", "--", NON_PRODUCT[0]], self.root)
+        return [path for path in changed.splitlines() if path != ticket_path(nn)]
+
     def patch_id(self, ref):
         diff = gitx.git(["diff", "-U0", f"{self.base_ref}...{ref}", *PRODUCT_SPEC], self.root).stdout
         if not diff:

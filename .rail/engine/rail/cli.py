@@ -10,7 +10,7 @@ import re
 import subprocess
 import sys
 
-from . import areas, gitx, hooks, steps
+from . import areas, gitx, guard, hooks, steps
 from .project import Project, event, events_path, ticket_path
 from .state import OPEN, derive, floor
 from .table import TRANSITIONS, first_match
@@ -784,7 +784,7 @@ def commit_work(project, f, run):
     changes = gitx.dirty(t.worktree, exclude=[".rail/journal"])
     if not changes:
         return True
-    product = [c for c in changes if not c.startswith(".rail/tickets/")]
+    product = [c for c in changes if c != ticket_path(t.id)]  # another ticket's file is not this ticket's to change
     outside = [c for c in product if not match_any(f.ticket.scope, c)]
     if outside:
         run.record("scope", False, f.patch_id, f"outside scope: {', '.join(outside)}",
@@ -1086,12 +1086,16 @@ def init_task(project):
 def save_work(project, f, via):
     """Commit a ticket's in-scope changes as they are and push them, with a `saved` event. Nothing is checked: the
     point is that a machine that goes away takes at most a few minutes of work with it, and that other sessions see
-    the ticket is alive. Returns (paths saved, paths left because they are outside scope, the push's result), or
-    None when there was nothing to save and the ticket moved a moment ago."""
+    the ticket is alive. A save runs before the project's checks, its secret scan included, so a file whose name says
+    it holds secrets is left for the ship, where that scan runs first. Returns (paths saved, paths left because they
+    are outside scope, paths left for the ship, the push's result), or None when there was nothing to save and the
+    ticket moved a moment ago."""
     t = f.t
     changes = gitx.dirty(t.worktree, exclude=[".rail/journal"])
-    inside = [c for c in changes if c.startswith(".rail/tickets/") or match_any(f.ticket.scope, c)]
-    outside = [c for c in changes if c not in inside]
+    inside = [c for c in changes if c == ticket_path(t.id) or match_any(f.ticket.scope, c)]
+    secret = [c for c in inside if guard.holds_secrets(c)]
+    inside = [c for c in inside if c not in secret]
+    outside = [c for c in changes if c not in inside and c not in secret]
     quiet = f.quiet_minutes
     if not inside and quiet is not None and quiet < project.config["claim"]["save_minutes"]:
         return None
@@ -1100,7 +1104,7 @@ def save_work(project, f, via):
         gitx.stage(t.worktree, inside)
         gitx.git(["commit", "--quiet", "-m", f"{t.id}: save work in progress [skip ci]", "--", *inside], t.worktree)
     pushed = project.append_events(t, [event(t.id, "saved", via=via, files=len(inside))], "save [skip ci]")
-    return inside, outside, pushed
+    return inside, outside, secret, pushed
 
 
 def save_all(project, via, only=None):
@@ -1129,11 +1133,15 @@ def save_all(project, via, only=None):
         project.release(f.id)
         if saved is None:
             continue
-        inside, outside, pushed = saved
+        inside, outside, secret, pushed = saved
         detail = f"ticket {f.id}: {len(inside)} files" + ("" if pushed == "ok" or not project.remote else f", push {pushed}")
         receipts.append({"step": "save", "status": "ran", "result": "pass", "detail": detail})
         if outside:
             notes.append(f"Ticket {f.id}: not saved, because they are outside scope_paths: {', '.join(outside)}")
+        if secret:
+            notes.append(f"Ticket {f.id}: not saved, because their names say they hold secrets: {', '.join(secret)}."
+                         " A save is pushed before the project's checks run. If they belong in the repository, rail"
+                         " advance commits them after verify; if not, add them to .gitignore.")
         if pushed == "rejected":
             notes.append(f"Ticket {f.id}: the push was refused, so its branch moved on the remote. Run rail next.")
     return receipts, notes

@@ -30,7 +30,8 @@ external_id = "github#123"
   row blocks ship.
 - **Look at** is written before ship: what a reader of the change should check.
 - The ticket file and the journal are outside `scope_paths` on purpose: editing the ticket (VERIFIED rows,
-  Look at) never fails the scope check.
+  Look at) never fails the scope check. That holds for the ticket's own file only. Another ticket's file on
+  its branch fails the scope check: a new ticket comes in through `rail add`, on its own branch.
 - **The tier** is the highest of the author's choice, the floors that `risk_paths` and `migration_paths`
   set from `scope_paths` at add, and the size cap at ship. Tickets touching `migration_paths` must set
   `reversibility` and `rollback`.

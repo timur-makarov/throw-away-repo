@@ -203,6 +203,13 @@ class Forge:
             return None
         return self.pulls().get(branch)
 
+    def merged_from(self, nn):
+        """The newest merged pull request from one of ticket NN's branches (NN-...), or None. A ticket whose branch
+        is gone shows by it that its own pull request was merged."""
+        if not self.ok:
+            return None
+        return next((pr for ref, pr in self.pulls().items() if ref.startswith(f"{nn}-") and pr.get("merged_at")), None)
+
     def full(self, pr):
         """An open pull request read on its own, for mergeable_state: the list doesn't carry it. One call per pull
         request, so it is asked only for a shipped ticket, where a conflict or a base that moved matters."""

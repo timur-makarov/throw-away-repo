@@ -30,6 +30,9 @@ on it.
 pushes them, with no checks. Two hooks run it: at the end of each agent turn, and at most every ten minutes
 while the agent works. So a machine that goes away takes minutes of work with it, and each save shows other
 sessions that the ticket is alive. Where no hook runs, the brief asks the agent to run `rail save` itself.
+A save is pushed before `verify` runs, the project's secret scan included, so it leaves out a file whose
+name says it holds secrets (`.env`, `*.pem`, `*.key`, an SSH key) and says so; the ship commits it after
+`verify`, or `.gitignore` keeps it out for good.
 Saves carry `[skip ci]`; the commit a ship pushes is the one CI checks. With GitHub reachable, `next` also takes in issues labelled
 `rail` and labels every wait `rail:needs-you`.
 
