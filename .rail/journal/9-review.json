@@ -74,6 +74,43 @@
           "id": "F4"
         }
       ]
+    },
+    {
+      "run": 3,
+      "role": "review",
+      "patch_id": "3dae05114643784a6ae8ccb4ee0a31fcc1220326",
+      "head": "95399c02bb76",
+      "tier": "HIGH",
+      "at": "2026-11-12T15:47:38Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.777228,
+      "summary": "All six Done Contract checks pass, and `.rail/engine`, the consult pack, `ruleset.json`, the workflow and the settings rules match the framework at the commit in `.rail/SOURCE` (the framework's 146 tests pass on that engine). F1 to F4 are fixed. Driving the copied engine in scratch clones with a bare remote found two advisory problems: a crash when `rail` runs with no session id, and a save hook that pushes a reviewer's scratch files when it fires during a review.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/table.py",
+          "line": 137,
+          "claim": "`_save_note` reads the cache with key `session or \"\"`, so with no `CLAUDE_CODE_SESSION_ID` it opens the directory `rail/cache/hooks/` and `rail next` dies with a traceback. Sequence: any Claude session has started in the clone (the SessionStart hook creates that folder), then `rail next --ticket 1` or a bare `rail next` runs from a plain terminal or another agent; the claim is committed before the crash.",
+          "check": "A test that runs the session-start hook with a session id, then `rail next --ticket NN` with CLAUDE_CODE_SESSION_ID unset, and expects exit 0 with an IMPLEMENT brief.",
+          "evidence": {
+            "command": "Scratch clone with a bare remote: `rail add`, `rail next` (session-a), `rail hook session-start` with session_id session-a, then `env -u CLAUDE_CODE_SESSION_ID -u RAIL_TICKET rail next --ticket 1 --json`",
+            "output": "rc 1\n  File \".../engine/rail/table.py\", line 137, in _save_note\n    if f.project.cache_read(\"hooks\", f.project.session or \"\"):\n  File \".../engine/rail/project.py\", line 224, in cache_read\n    with open(path) as f:\nIsADirectoryError: [Errno 21] Is a directory: '.../t1/a/.git/rail/cache/hooks/'"
+          },
+          "id": "F5"
+        },
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/cli.py",
+          "line": 1118,
+          "claim": "The save hooks don't know a review is running: when the session's PostToolUse hook fires while its own `rail advance` is inside a review (a parallel tool call, or advance run in the background), `save_work` commits and pushes the reviewer's in-scope scratch files. The review's `git reset --hard head` then moves the branch back behind that push, so the `review` commit never reaches the remote and local and remote stay diverged (the same end state as F1).",
+          "check": "A test whose review command writes a file inside scope_paths and sleeps, runs `rail hook pulse` for the same session meanwhile, and asserts the remote branch has no scratch file and equals the local branch after advance.",
+          "evidence": {
+            "command": "Scratch clone with a bare remote, MEDIUM ticket 1, review command `echo scratch > src/scratch.py; sleep 6; python3 fake_reviewer.py`; `rail advance 1` in one thread, `rail hook pulse` (same session) 4 s later; then `git log --oneline` of the local and remote branch, and `rail advance 1` again",
+            "output": "local : 0313aaa 1: review\n        a0cd144 1: ship\nremote: 3562b4f 1: save [skip ci]\n        139dc2f 1: save work in progress [skip ci]\n        a0cd144 1: ship\nremote has scratch: True\n(after a second rail advance 1: both heads unchanged)"
+          },
+          "id": "F6"
+        }
+      ]
     }
   ]
 }
