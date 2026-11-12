@@ -1,0 +1,18 @@
+{
+  "schema": "review/v1",
+  "ticket": "2",
+  "runs": [
+    {
+      "run": 1,
+      "role": "review",
+      "patch_id": "8a3a40d5629110ed43b476ef1a9246de3696dbfb",
+      "head": "61d02ee03d05",
+      "tier": "MEDIUM",
+      "at": "2026-11-12T11:37:35Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 0.1974578,
+      "summary": "No findings. I ran all three Done Contract checks (all pass, 5 tests OK) and probed `div` with a float zero, non-numeric divisors, huge ints and near-zero divisors. Zero in int or float form raises `CalcError`, results are true-division floats, and the other behaviours match the existing functions and are outside what the ticket asks for; no docs reference the operation list.",
+      "findings": []
+    }
+  ]
+}
