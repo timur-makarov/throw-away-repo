@@ -23,8 +23,10 @@ It prefers this session's own tickets; then tickets no session holds (a shipped 
 may move through CI and the merge, and work an ended session left); then new work in ID order. A ticket
 another session is implementing or reviewing is left alone while it keeps moving. After
 `[claim] stale_minutes` (30) with no journal event, the next `rail next` resumes it, and
-`rail next --ticket NN` takes it over at once. A session whose ticket was taken over is told to stop work
-on it.
+`rail next --ticket NN` takes it over at once. A ticket that waited for a person goes on with whoever
+reads the answer: the session that sees your `rail:go`, or the one you tell `accept NN`, takes it over at
+once, because the session that claimed it rested at the wait. A session whose ticket was taken over is told
+to stop work on it.
 
 **Work in flight is saved as it goes.** `rail save` commits a ticket's in-scope changes as they are and
 pushes them, with no checks. Two hooks run it: at the end of each agent turn, and at most every ten minutes

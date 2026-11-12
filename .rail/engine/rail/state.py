@@ -162,9 +162,11 @@ class Facts:
 
     @property
     def quiet_minutes(self):
-        """Minutes since the ticket's last journal event: every engine move writes one and pushes it, and a
-        session at work saves at least every claim.save_minutes."""
-        times = [e.get("at", "") for e in list(self.t.events) + list(self.t.remote_events) if e.get("at")]
+        """Minutes since the last journal event the work on the ticket wrote: every engine move writes one and
+        pushes it, and a session at work saves at least every claim.save_minutes. A person's answer is no such
+        sign: the session that records a rail:go may be another one than the session that holds the claim."""
+        times = [e.get("at", "") for e in list(self.t.events) + list(self.t.remote_events) if e.get("at") and not (
+            e.get("event") == "continued" or (e.get("event") == "accepted" and e.get("by") == "person"))]
         return minutes_since(max(times)) if times else None
 
     @property

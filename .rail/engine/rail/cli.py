@@ -221,6 +221,17 @@ def person_comments(project, f):
     return "\n".join(said)
 
 
+def answers_wait(f):
+    """Whether a rail:go on the ticket answers a wait for a person: what the table says with the label left out."""
+    if "rail:go" not in f.labels:
+        return False
+    labels, f.labels = f.labels, f.labels - {"rail:go"}
+    try:
+        return first_match(f)[1] == "human"
+    finally:
+        f.labels = labels
+
+
 def transition(project, f, code):
     """Make one of the moves the table leaves to `next`. False when another clone got there first."""
     t = f.t
@@ -261,6 +272,7 @@ def transition(project, f, code):
         # A person's rail:go: it approves a contract or an amend, or continues any other wait.
         note = person_comments(project, f) or None
         ensure_local(project, t)
+        waited = answers_wait(f)
         if f.state == "new" or f.amend_pending:
             record = accepted_event(t.id, f.ticket, f.tier, "person", "label", note)
         else:
@@ -268,6 +280,10 @@ def transition(project, f, code):
         project.append_events(t, [record], "continue")
         for label in ("rail:go", "rail:needs-you"):
             project.forge.remove_label(f.pr["number"], label)
+        if waited and f.in_flight and f.claimed_elsewhere and not claim(project, t, takeover=True):
+            # The session that claimed it was waiting for this answer, not working. The run that reads the answer
+            # goes on with the ticket: the label is gone now, so no later run would be started for it.
+            return False, run
     elif code == "REBASE_BEHIND":
         # The base requires up-to-date branches: rebase the shipped PR with no agent work.
         ensure_local(project, t)
@@ -487,6 +503,9 @@ def cmd_accept(project, args):
         for label in ("rail:go", "rail:needs-you"):
             if label in f.labels:
                 project.forge.remove_label(f.pr["number"], label)
+    if f.in_flight and f.claimed_elsewhere:
+        # The session that claimed it rested at this wait, and the person answered here: this session goes on.
+        claim(project, f.t, takeover=True)
     tickets, facts = load(project)
     return from_facts(facts[nn])
 
@@ -707,8 +726,11 @@ def cmd_next(project, args):
     # which the engine moves from anywhere, and work an ended session left), then new work in ID order.
     mine = [f for f in facts.values() if f.state in OPEN and not f.claimed_elsewhere]
     free = [f for f in facts.values() if f.state in OPEN and f.claimed_elsewhere and not f.held]
+    # Another session's ticket that waited for a person, and has its answer: that session rested at the wait, and
+    # the label is removed once read, so the run that reads it goes on.
+    answered = [f for f in facts.values() if f.state in OPEN and f.held and answers_wait(f)]
     fresh = [f for f in facts.values() if f.state in ("new", "accepted")]
-    for candidate in mine + free + fresh:
+    for candidate in mine + free + answered + fresh:
         if first_match(candidate)[1] != "agent":
             continue
         f, receipts = settle(project, candidate.id, explicit=False)
@@ -722,7 +744,7 @@ def cmd_next(project, args):
         if owner == "human":
             waits.append({"ticket": f.id, "needs": code, "brief": action["brief"],
                           **({"pr": f.pr["html_url"]} if f.pr else {})})
-        elif code == "CLAIMED_ELSEWHERE":
+        elif f.held:  # also with a rail:go on it that answers no wait: the session at work reads it
             held.append({"ticket": f.id, "quiet_minutes": f.quiet_minutes,
                          **({"session": f.claimed["session_url"]} if f.claimed.get("session_url") else {})})
         elif code == "CI_WAIT" and f.pushed:
