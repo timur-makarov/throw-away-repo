@@ -1,0 +1,98 @@
+{
+  "schema": "review/v1",
+  "ticket": "6",
+  "runs": [
+    {
+      "run": 1,
+      "role": "sweep",
+      "patch_id": "",
+      "head": "825eef2f5186",
+      "tier": "LOW",
+      "at": "2026-11-12T11:46:00Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 0.8470595999999999,
+      "summary": "Swept the two unreviewed framework updates (guard, hook, forge, settings, doctor, docs) and four calculator tickets by reading the code and running the guard's deny() with the hook's locate logic against candidate command lines; also exercised log_tail, the answer verb's parser against the new ask patterns, and calculator edge cases. The new \"other repository\" logic in the guard fails open in four distinct ways, the --owner ask rule is evadable, and the calculator's new functions leak ZeroDivisionError past CalcError.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 246,
+          "claim": "The guard's cd tracking believes the shell is in another directory when it isn't, so pushes to main and gh merges that were denied before now pass. `cd /tmp/x && cd - && git push origin main` (cd - is read as ~), `pushd /tmp/x && popd && git push origin main`, `(cd /tmp/x) && git push origin main`, `cd /tmp/x || git push origin main`, `cd /tmp/x & git push --force origin x` and `(cd /tmp/x); gh pr merge 5` all return None.",
+          "evidence": {
+            "command": "python3 $S/t.py $S   # calls guard.deny(line, 'main', 'main', cwd=root, locate=<the hook's locate>, repo='timur-makarov/throw-away-repo'); $S/plain is a non-repo directory",
+            "output": "None <= cd $S/plain && cd - && git push origin main\nNone <= pushd $S/plain && popd && git push origin main\nNone <= (cd $S/plain) && git push origin main\nNone <= (cd $S/plain); gh pr merge 5 --squash\nNone <= cd $S/plain || git push origin main\nNone <= cd $S/plain & git push --force origin x\nNone <= echo hi | cd $S/plain; git push origin main"
+          },
+          "check": "Unit tests for guard.deny with a locate stub: each of cd -, popd, a subshell cd, cd behind ||, & and | followed by `git push origin main` must still be denied; any cd form the guard cannot follow must set the directory to unknown (None), which falls back to 'ours'.",
+          "id": "F1"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 250,
+          "claim": "A git command is judged by its working directory only, so a command that targets this repository from elsewhere is left alone: `cd /tmp/x && git --git-dir=$ROOT/.git push origin main`, `git --git-dir $ROOT/.git -C /tmp/x push origin main`, and `cd /tmp/x && git push --force https://github.com/timur-makarov/throw-away-repo HEAD:main` all pass, where the same push was denied before this change.",
+          "evidence": {
+            "command": "python3 $S/t.py $S",
+            "output": "None <= cd $S/plain && git --git-dir=$ROOT/.git push origin main\nNone <= cd $S/plain && git push --force https://github.com/timur-makarov/throw-away-repo HEAD:main\nNone <= git --git-dir $ROOT/.git -C $S/plain push origin main"
+          },
+          "check": "Guard tests: a git command carrying --git-dir/--work-tree (or GIT_DIR=), or a push whose remote argument is this project's URL, is treated as ours regardless of cwd.",
+          "id": "F2"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 265,
+          "claim": "For gh, being in another repository's directory skips the merge rules before the command's own repository is looked at, so `cd ../other && gh pr merge 5 -R timur-makarov/throw-away-repo`, `... gh pr merge https://github.com/timur-makarov/throw-away-repo/pull/5` and `... GH_REPO=timur-makarov/throw-away-repo gh pr merge 5` merge this project's PR unguarded.",
+          "evidence": {
+            "command": "python3 $S/t.py $S   # $S/other is a different git repository",
+            "output": "None <= cd $S/other && gh pr merge 5 -R timur-makarov/throw-away-repo\nNone <= cd $S/other && gh pr merge https://github.com/timur-makarov/throw-away-repo/pull/5\nNone <= cd $S/other && GH_REPO=timur-makarov/throw-away-repo gh pr merge 5"
+          },
+          "check": "Guard tests: from a foreign cwd, gh pr merge / gh api .../merge naming this project by -R, --repo=, GH_REPO= or a PR URL is denied; the cwd exemption applies only when the command names no repository.",
+          "id": "F3"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 221,
+          "claim": "_other_repo takes any word containing /repos/X/Y/ or a templated path as naming another repository, so merges of this project's PRs pass from inside the project: `gh pr merge 5 --body /repos/a/b/`, `gh api -X PUT repos/{owner}/{repo}/pulls/5/merge` (gh fills the placeholders with the current repository), and `gh pr merge 5 -R github.com/timur-makarov/throw-away-repo` (HOST/OWNER/NAME and URL forms aren't recognised as ours).",
+          "evidence": {
+            "command": "python3 $S/t2.py   # guard.deny(c, 'main', 'x', cwd=root, locate=None, repo='timur-makarov/throw-away-repo')",
+            "output": "None <= gh pr merge 5 --body /repos/a/b/\nNone <= gh pr merge 5 --squash --subject x/repos/a/b/c\nNone <= gh api -X PUT repos/{owner}/{repo}/pulls/5/merge\nNone <= gh api -X PUT repos/:owner/:repo/pulls/5/merge\nNone <= gh pr merge 5 -R github.com/timur-makarov/throw-away-repo\nNone <= gh pr merge 5 -R https://github.com/timur-makarov/throw-away-repo"
+          },
+          "check": "Guard tests: repos/{owner}/{repo} and repos/:owner/:repo count as ours; a repos/ match is taken only from gh api's endpoint argument, not from flag values; -R accepts [HOST/]OWNER/NAME and URL forms.",
+          "id": "F4"
+        },
+        {
+          "severity": "blocking",
+          "file": ".claude/settings.json",
+          "line": 32,
+          "claim": "The two ask patterns only match `--owner` spelled in full after the positionals, while `Bash(rail answer *)` allows everything else with no prompt. `rail answer --owner 5 F1 declined why`, `rail answer 5 F1 declined why --own` and `--o` (argparse abbreviations) all set owner=True yet match neither ask rule, so the agent can record a person's decision on a blocking finding unprompted, contradicting guards.md's \"always asks, in every mode\".",
+          "evidence": {
+            "command": "python3 (same argparse definition as cli.py:1087-1091; ask patterns matched as globs)",
+            "output": "True ask-rule-matches: False <= rail answer --owner 5 F1 declined why\nTrue ask-rule-matches: False <= rail answer 5 F1 declined why --own\nTrue ask-rule-matches: False <= rail answer 5 F1 declined why --o"
+          },
+          "check": "Have the guard hook return 'ask' whenever a rail answer command's parsed arguments set owner (any position, any abbreviation), or set allow_abbrev=False and add `Bash(rail answer --owner*)`; test the three spellings.",
+          "id": "F5"
+        },
+        {
+          "severity": "advisory",
+          "file": "calc/stats.py",
+          "line": 5,
+          "claim": "Tickets 4 and 5 add division paths that bypass the CalcError contract ticket 2 set for division by zero: `stats.mean([])` and `calc.power(0, -1)` raise a bare ZeroDivisionError, and neither test file covers the refused case (tests/test_stats.py, tests/test_calc.py test_power check only happy paths).",
+          "evidence": {
+            "command": "python3 -c \"import calc; from calc import stats; ... calc.power(0,-1); stats.mean([])\"",
+            "output": "ZeroDivisionError 0.0 cannot be raised to a negative power\nZeroDivisionError division by zero"
+          },
+          "check": "Tests asserting calc.CalcError for stats.mean([]) and calc.power(0, -1).",
+          "id": "F6"
+        },
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/guard.py",
+          "claim": "The engine's guard logic gained ~60 lines of fail-open branching (cd tracking, locate, _other_repo) and this repository carries no tests for it; the verify command only runs tests/ for calc, so the four bypass classes above passed CI. .rail/engine/** is a HIGH risk path with no check behind it.",
+          "check": "A guard test table (command line -> denied/allowed) run by the verify command, or a doctor check that the vendored engine's own tests ran at the pinned .rail/SOURCE commit.",
+          "id": "F7"
+        }
+      ]
+    }
+  ]
+}
