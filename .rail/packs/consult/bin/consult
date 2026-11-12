@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""consult: a different model advises a stuck agent (plan, section 18).
+
+The engine runs this with a JSON request on stdin and records what it prints. It changes nothing.
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import tomllib
+
+request = json.load(sys.stdin)
+root = os.environ.get("RAIL_ROOT", os.getcwd())
+with open(os.path.join(root, ".rail", "config.toml"), "rb") as f:
+    config = tomllib.load(f)
+command = config.get("consult", {}).get("command") or "claude -p --safe-mode --tools Read,Grep,Glob"
+timeout = config.get("commands", {}).get("timeout_secs", 900)
+
+brief = f"""You advise a coding agent that is stuck on one ticket. Read the repository as you need. Change nothing.
+
+## The ticket
+{request.get("ticket_text", "")}
+
+## The change so far
+```diff
+{request.get("diff", "")}
+```
+
+## What failed: the step '{request.get("step") or "none"}'
+```
+{request.get("output", "")}
+```
+
+## The question
+{request.get("question", "")}
+
+Answer in a few sentences: what is wrong, and what the agent should do. End with exactly one of these lines:
+VERDICT: proceed   (the approach is right; keep going)
+VERDICT: change    (change the approach as you describe)
+VERDICT: stop      (a person must decide)
+"""
+try:
+    result = subprocess.run(["sh", "-c", command], input=brief, capture_output=True, text=True, timeout=timeout)
+    text = result.stdout.strip() or result.stderr.strip()
+except subprocess.TimeoutExpired:
+    text = "The consult timed out."
+verdicts = re.findall(r"VERDICT:\s*(proceed|change|stop)", text, re.I)
+advice = "\n".join(l for l in text.splitlines() if not re.match(r"\s*VERDICT:", l, re.I)).strip()
+print(json.dumps({
+    "verdict": verdicts[-1].lower() if verdicts else "change",
+    "advice": advice,
+    "same_model": os.path.basename(command.split()[0]) == "claude",
+}))

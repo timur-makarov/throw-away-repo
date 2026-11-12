@@ -1,0 +1,44 @@
+# Rail's project policy. Every field names its reader. `rail docs config` explains each one.
+# Top-level keys come first: in TOML, a key below a [table] header belongs to that table.
+
+base_branch = "main"                      # reader: claim, ship, CI, merge
+auto_tiers = ["LOW", "MEDIUM"]            # accepted and merged with no person; a person approves other tiers' contracts and merges them
+migration_paths = ["**/migrations/**"]    # a HIGH floor; tickets touching them need reversibility and rollback
+
+[commands]
+setup = ""                                # reader: claim (after each worktree is made) and CI
+verify = "python3 -m unittest discover -s tests -q && python3 -m compileall -q calc tests"                               # reader: ship and CI. The whole project: tests, lint, a secret scan, a dependency scan
+timeout_secs = 900                        # reader: every command run: setup, verify, each check, each review run
+
+[risk_paths]                              # reader: add (floors matched against scope_paths) and ship (changed files)
+HIGH = [".rail/bin/**", ".rail/engine/**", ".rail/config.toml", ".claude/**", ".github/workflows/**"]
+MEDIUM = []
+
+[size]                                    # reader: ship and CI; changed lines, generated files and lockfiles excluded
+LOW = 300
+MEDIUM = 600
+exclude = []
+
+[retry]
+budget = 2                                # reader: next and advance; attempts per step, then consult, then a person
+
+[sweep]
+after = 3                                 # reader: next; LOW tickets and ticketless commits since the last sweep
+
+[map]
+depth = 1                                 # reader: doc-lint; the directory depth ## Areas must cover
+ignore = []
+
+[review]                                  # reader: advance; runs in the ticket's worktree with the brief on stdin
+# the command runs through sh; --json-schema takes the schema's text, not a path. The engine resets the worktree afterwards
+command = '''claude -p --safe-mode --system-prompt-file .rail/engine/reviewer.md --tools Read,Grep,Glob,Bash,Edit,Write --allowedTools Bash,Edit,Write --disallowedTools 'Bash(git push *)' --output-format json --json-schema "$(cat .rail/engine/review-v1.json)"'''
+
+[consult]                                 # reader: the consult pack; read-only, with the brief on stdin
+command = "claude -p --safe-mode --tools Read,Grep,Glob"
+                                          # point it at another vendor's CLI when you have one; claude is labelled same-model
+
+[[rules]]                                 # reader: ship and CI; structure rules on added lines (rail docs rules)
+id = "no-new-suppressions"
+forbid = ["eslint-disable", "@ts-ignore", "# noqa", ".skip("]
+allow = []
+fix = "Fix the cause instead of silencing the check."

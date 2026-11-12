@@ -1,0 +1,76 @@
+{
+  "title": "review/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "findings"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "One or two sentences: what you checked and how. In a refuter run: why the finding holds or does not."
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "severity",
+          "file",
+          "claim"
+        ],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": [
+              "blocking",
+              "advisory",
+              "parked"
+            ],
+            "description": "blocking: must not merge as it is. advisory: worth fixing, safe to merge. parked: a real problem this change did not cause."
+          },
+          "file": {
+            "type": "string",
+            "description": "Path from the repository root."
+          },
+          "line": {
+            "type": "integer",
+            "description": "Line in the file as it is after the change. Leave out when the problem is something missing."
+          },
+          "claim": {
+            "type": "string",
+            "description": "One or two sentences: what is wrong, and the input or sequence that shows it."
+          },
+          "check": {
+            "type": "string",
+            "description": "A deterministic check that would catch this kind of mistake, when one exists."
+          },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command",
+              "output"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "description": "The command you ran."
+              },
+              "output": {
+                "type": "string",
+                "description": "Its output, trimmed to the lines that show the problem."
+              }
+            }
+          },
+          "repeats": {
+            "type": "string",
+            "description": "On a re-review only: the id of the earlier finding this one repeats, such as F2."
+          }
+        }
+      }
+    }
+  }
+}

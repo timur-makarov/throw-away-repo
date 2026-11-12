@@ -1,0 +1,75 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./**/.env)",
+      "Edit(./**/.env)",
+      "Write(./**/.env)",
+      "Read(./**/.env.local)",
+      "Edit(./**/.env.local)",
+      "Write(./**/.env.local)",
+      "Read(./**/.env.*.local)",
+      "Edit(./**/.env.*.local)",
+      "Write(./**/.env.*.local)",
+      "Read(./**/.env.development)",
+      "Edit(./**/.env.development)",
+      "Write(./**/.env.development)",
+      "Read(./**/.env.production)",
+      "Edit(./**/.env.production)",
+      "Write(./**/.env.production)",
+      "Read(./**/.env.staging)",
+      "Edit(./**/.env.staging)",
+      "Write(./**/.env.staging)",
+      "Read(./**/.env.test)",
+      "Edit(./**/.env.test)",
+      "Write(./**/.env.test)",
+      "Edit(./.rail/journal/**)",
+      "Write(./.rail/journal/**)"
+    ],
+    "ask": [
+      "Bash(sudo *)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -f*)"
+    ]
+  },
+  "env": {
+    "BASH_DEFAULT_TIMEOUT_MS": "1800000",
+    "BASH_MAX_TIMEOUT_MS": "7200000"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.rail/bin/rail hook session-start"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.rail/bin/rail hook guard"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "idle_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.rail/bin/rail hook notify"
+          }
+        ]
+      }
+    ]
+  },
+  "sandbox": {
+    "enabled": true
+  }
+}
