@@ -367,6 +367,55 @@
           "id": "F18"
         }
       ]
+    },
+    {
+      "run": 13,
+      "role": "security",
+      "patch_id": "98b9b6f6f5ca3c99f36535c63e8cc039ea95b7f2",
+      "head": "dc15a95ff7a1",
+      "tier": "HIGH",
+      "at": "2026-11-12T17:53:12Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.4812678,
+      "summary": "Security seat, re-review. Ran ~450 command lines through `guard.deny`/`guard.ask` of main's engine and this change's engine side by side, then confirmed the differences through the real `rail hook guard` (RAIL_CLOUD=0 and 1) and in bash. F10\u2013F12 are fixed (their commands are denied again), and the three Done Contract guard checks hold. Three new fail-open regressions against main's guard remain: two blocking, one advisory. I also read the save/provision/claim paths and settings.json and found nothing further to report.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 67,
+          "claim": "The new line scanner `_scan` doesn't know shell comments, so an apostrophe in a trailing comment opens a quote that swallows every following line: `echo start # can't fail` + newline + `git push origin HEAD:main` (or `gh api -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge`, or `git push -f`) passes the guard, though bash runs the second line. Main's engine denies these; a comment naming `<<EOF` or `$((1<<EOF))` hides the following lines the same way. With the new rule that a merged unshipped pull request is the person's approval, this also lets an agent approve its own contract.",
+          "check": "A guard test: for each denied command C, the two-line command `echo x # can't fail\\nC` is denied too, and so is `echo $((1<<EOF))\\nC\\nEOF`.",
+          "evidence": {
+            "command": "printf '%s' '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo start # can'\"'\"'t fail\\ngit push origin HEAD:main\"},\"cwd\":\"'\"$PWD\"'\"}' | .rail/bin/rail hook guard   (run for each case with this change's engine and with origin/main's; then bash -c on \"# it's fine\\necho RAN-second-line\")",
+            "output": "NEW\npass \"echo start # can't fail\\ngit push origin HEAD:main\"\npass \"git status  # what's changed\\ngh api -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge\"\npass 'echo $((1<<EOF))\\ngit push -f origin 9-x\\nEOF'\nOLD\ndeny \"echo start # can't fail\\ngit push origin HEAD:main\"\ndeny \"git status  # what's changed\\ngh api -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge\"\ndeny 'echo $((1<<EOF))\\ngit push -f origin 9-x\\nEOF'\nBASH\nRAN-second-line"
+          },
+          "id": "F19"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 456,
+          "claim": "`_gh_named` reads `GH_REPO=` from every word of the command, not only from the assignments in front of `gh`, so an option's value names a repository: `gh pr merge 5 --squash -t GH_REPO=other/repo` (or `--body GH_REPO=other/repo`) merges this project's pull request and passes. Main's engine denies it; this is F11's case with `GH_REPO=` in place of a URL.",
+          "check": "A guard test: `gh pr merge 5 -t GH_REPO=other/repo` and `gh pr merge 5 --body GH_REPO=other/repo` are denied; only words before the command word count as assignments (raw[:len(raw)-len(words)]).",
+          "evidence": {
+            "command": "printf '%s' '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"gh pr merge 5 --squash -t GH_REPO=other/repo\"},\"cwd\":\"'\"$PWD\"'\"}' | .rail/bin/rail hook guard   (this change's engine vs origin/main's)",
+            "output": "NEW\npass 'gh pr merge 5 --squash -t GH_REPO=other/repo'\npass 'gh pr merge 5 --squash --body GH_REPO=other/repo'\ndeny 'gh pr merge 5 --squash'\nOLD\ndeny 'gh pr merge 5 --squash -t GH_REPO=other/repo'\ndeny 'gh pr merge 5 --squash --body GH_REPO=other/repo'"
+          },
+          "id": "F20"
+        },
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 498,
+          "claim": "The new tracking of an exported `GH_REPO` only ever adds: it counts an `export` that never reaches `gh` (in a pipeline, inside `bash -c`, a `declare` without `-x`) and ignores `unset GH_REPO`. So `export GH_REPO=other/repo; unset GH_REPO; gh pr merge 5` and `declare GH_REPO=other/repo; gh pr merge 5` merge this project's pull request and pass; main's engine denies all four.",
+          "check": "A guard test: after `unset GH_REPO`, after an export inside a pipeline or `bash -c`, and after a `declare` without `-x`, `gh pr merge 5` is denied.",
+          "evidence": {
+            "command": "same hook comparison, this change's engine vs origin/main's; bash -c 'export GH_REPO=other/repo; unset GH_REPO; env | grep -c GH_REPO; declare GH_REPO=o/r; env | grep -c GH_REPO'",
+            "output": "NEW\npass 'export GH_REPO=other/repo; unset GH_REPO; gh pr merge 5'\npass 'export GH_REPO=other/repo | cat; gh pr merge 5'\npass \"bash -c 'export GH_REPO=other/repo'; gh pr merge 5\"\npass 'declare GH_REPO=other/repo; gh pr merge 5'\nOLD\ndeny (all four)\nBASH\n0\n0"
+          },
+          "id": "F21"
+        }
+      ]
     }
   ]
 }
