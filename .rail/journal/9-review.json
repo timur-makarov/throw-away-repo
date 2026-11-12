@@ -689,6 +689,18 @@
         }
       ],
       "disputes": "F30"
+    },
+    {
+      "run": 20,
+      "role": "review",
+      "patch_id": "ce846e860d601725897bcd7387cc593bf799ab6c",
+      "head": "753135b35e09",
+      "tier": "HIGH",
+      "at": "2026-11-12T19:08:43Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.2784676,
+      "summary": "No new findings. I ran all six Done Contract checks (they pass), confirmed the engine, pack, ruleset, workflow and ticket template are byte-identical to the framework at the commit in `.rail/SOURCE`, ran the framework's 167 tests on that engine (OK), and probed the guard with about 60 command lines against main's engine in both local and cloud mode. F28 is not repeated: `docs/loop.md` in this copy now describes that behaviour as intended.",
+      "findings": []
     }
   ]
 }
