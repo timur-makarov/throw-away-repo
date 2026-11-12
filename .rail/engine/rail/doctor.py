@@ -40,13 +40,14 @@ def checks(project):
     found.append(("hooks", not missing, "the session-start, guard and notify hooks are wired" if not missing
                   else f"not wired in .claude/settings.json: {', '.join(missing)}; run rail init"))
     permissions = settings.get("permissions", {})
-    expected = [("deny", "Edit(./.rail/journal/**)"), ("deny", "Read(./**/.env)"), ("ask", "Bash(sudo *)")]
+    expected = [("deny", "Edit(./.rail/journal/**)"), ("deny", "Read(./**/.env)"), ("ask", "Bash(sudo *)"),
+                ("allow", "Bash(rail advance *)"), ("ask", "Bash(rail answer * --owner)")]
     absent = [rule for kind, rule in expected if rule not in permissions.get(kind, [])]
     guard_on_bash = any(g.get("matcher") == "Bash" and "rail hook guard" in json.dumps(g)
                         for g in hooks.get("PreToolUse", []))
     if not guard_on_bash and "guard" not in missing:
         absent.append("the guard hook's Bash matcher")
-    found.append(("guard rules", not absent, "the deny and ask rules are in .claude/settings.json" if not absent
+    found.append(("guard rules", not absent, "the allow, deny and ask rules are in .claude/settings.json" if not absent
                   else f"missing from .claude/settings.json: {', '.join(absent)}; run rail init"))
 
     agents = os.path.join(root, "AGENTS.md")

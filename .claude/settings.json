@@ -28,7 +28,24 @@
     "ask": [
       "Bash(sudo *)",
       "Bash(git reset --hard*)",
-      "Bash(git clean -f*)"
+      "Bash(git clean -f*)",
+      "Bash(rail answer * --owner)",
+      "Bash(rail answer * --owner *)"
+    ],
+    "allow": [
+      "Bash(rail next *)",
+      "Bash(rail advance *)",
+      "Bash(rail add *)",
+      "Bash(rail answer *)",
+      "Bash(rail amend *)",
+      "Bash(rail status *)",
+      "Bash(rail context *)",
+      "Bash(rail docs *)",
+      "Bash(rail doctor *)",
+      "Bash(rail intake *)",
+      "Bash(rail sweep *)",
+      "Bash(rail consult *)",
+      "Bash(gh run watch *)"
     ]
   },
   "env": {

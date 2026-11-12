@@ -24,5 +24,6 @@ a `curl` to ntfy.
 
 To run from GitHub events instead, see `rail docs github-runner`.
 
-Run unattended sessions with `--permission-mode auto`. `ask` rules still prompt there, so `sudo` or
-`git reset --hard` pauses the loop until someone answers.
+Run unattended sessions with `--permission-mode auto`; a cloud session picks Auto from the mode menu. The
+loop's own commands are allowed by rule, so auto mode doesn't review them (`rail docs guards`). `ask` rules
+still prompt there, so `sudo` or `git reset --hard` pauses the loop until someone answers.
