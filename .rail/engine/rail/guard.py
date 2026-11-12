@@ -490,11 +490,11 @@ def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
         return "piping a download into a shell runs code nobody has read"
     here = cwd
     repo = repo.lower() if repo else None
-    aimed = False  # an exported GIT_DIR or GIT_WORK_TREE points every later git command at a repository
+    git_exported = False  # an exported GIT_DIR or GIT_WORK_TREE points every later git command at a repository
     gh_repo = []  # and an exported GH_REPO names the repository of every later gh command
     for raw, words, operator, grouped in sequence(line):
         if words[0] in ("export", "declare", "typeset"):
-            aimed = aimed or any(w.split("=")[0] in ("GIT_DIR", "GIT_WORK_TREE") for w in words[1:])
+            git_exported = git_exported or any(w.split("=")[0] in ("GIT_DIR", "GIT_WORK_TREE") for w in words[1:])
             gh_repo += [_repo_name(w.split("=", 1)[1]) for w in words[1:] if w.startswith("GH_REPO=")]
         if _wipes_disk(words):
             return "this command can wipe a disk or a home folder"
@@ -511,7 +511,7 @@ def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
         elif words[0] == "git":
             sub, args = _git(words)
             where = _git_dir(words, here)
-            if aimed or any(w.startswith(("GIT_DIR=", "GIT_WORK_TREE=")) for w in raw) or _moved(raw, words):
+            if git_exported or any(w.startswith(("GIT_DIR=", "GIT_WORK_TREE=")) for w in raw) or _moved(raw, words):
                 where = None
             found = locate(where) if locate and where is not None else None
             ours, at = found if found else (True, branch)
