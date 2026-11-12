@@ -1010,8 +1010,10 @@ def cmd_drop(project, args):
         raise RailError(f"ticket {f.id} is merged; follow-up work is a new ticket with caused_by", code="MERGED")
     receipts = []
     if f.state != "dropped":
-        ensure_local(project, f.t)
-        project.append_events(f.t, [event(f.id, "dropped", by=args.by, reason=args.reason or "")], "drop")
+        if f.t.name:
+            ensure_local(project, f.t)
+            project.append_events(f.t, [event(f.id, "dropped", by=args.by, reason=args.reason or "")], "drop")
+        project.mark_dropped(f.id)
     if f.pr_open:
         project.forge.update_pr(f.pr["number"], state="closed")
         receipts.append({"step": "close-pr", "status": "ran", "result": "pass", "detail": f"closed #{f.pr['number']}"})

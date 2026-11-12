@@ -56,7 +56,8 @@ class Facts:
         # The newest claim, the remote's journal included: after a takeover this clone's own branch doesn't have it.
         claims = [e for e in list(t.events) + list(t.remote_events) if e.get("event") == "claimed"]
         self.claimed = sorted(claims, key=lambda e: e.get("at", ""))[-1] if claims else None  # of equal times, the later
-        self.dropped_event = t.last("dropped")
+        # A drop is an event in the journal, and a mark in the counter branch for when the journal's branch is gone.
+        self.dropped_event = t.last("dropped") or ({"event": "dropped"} if t.dropped_mark else None)
         self.contract_merged = False
         self.patch_id = None
         self.dirty = []

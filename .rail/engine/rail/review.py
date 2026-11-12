@@ -261,15 +261,16 @@ def validate(project, head, nn, data, ledger, role, disputed):
 def run(project, f, role, receipt, disputed=None, prompt=None):
     """One run of review.command. Adds its step and finding events to `receipt`, and returns the stored run entry.
     A sweep run brings its own brief, writes no finding events, and never fails."""
+    from .steps import keep_alive
+
     t, wt = f.t, f.t.worktree
+    keep_alive(project, t)  # it may commit and push an event: before the head the worktree is reset to is read
     head = gitx.rev(t.ref, project.root)
     text = gitx.read_blobs([f"{t.ref}:{review_path(t.id)}"], project.root)[f"{t.ref}:{review_path(t.id)}"]
     doc = load_doc(text, t.id)
     ledger = Ledger(t.events, doc)
     prompt = prompt or brief(project, f, role, ledger, disputed)
     timeout = project.config["commands"]["timeout_secs"]
-    from .steps import keep_alive
-    keep_alive(project, t)
     code, output, ms = run_shell(project.config["review"]["command"], wt,
                                  {"RAIL_TICKET": t.id, **model_env(project.config["review"]["model"])}, timeout, stdin=prompt)
     gitx.git(["reset", "--quiet", "--hard", head], wt)

@@ -66,6 +66,7 @@ class TicketInfo:
         self.label = ""            # the title the ticket was added with, kept by the counter branch
         self.worktree = None
         self.on_base = False       # the ticket file is on the base branch
+        self.dropped_mark = False  # the counter branch says the ticket was dropped: it outlives the ticket's branch
         self.remote_events = []    # the remote branch's journal, when it differs from the local branch's
 
     @property
@@ -139,6 +140,9 @@ class Project:
             for nn in os.listdir(self.ids_dir):
                 if nn.isdigit():
                     info(nn).id_taken = True
+        for nn in self.dropped_marks():
+            if nn in found:
+                found[nn].dropped_mark = True
 
         base = self.base_ref
         if gitx.rev(base, self.root):
@@ -297,6 +301,43 @@ class Project:
             if m:
                 ids[m.group(1)] = body.strip()
         return tip, max((int(nn) for nn in ids), default=0), ids
+
+    def dropped_marks(self):
+        """The IDs the counter branch marks as dropped (`rail drop NN` commits), or, with no remote, the marks in
+        the git directory. A ticket's journal goes with its branch; this stays."""
+        marks = set()
+        tip = gitx.rev(f"refs/remotes/{self.remote}/{IDS_BRANCH}", self.root) if self.remote else None
+        if tip:
+            for subject in gitx.out(["log", "--first-parent", "--format=%s", tip], self.root).splitlines():
+                if m := re.match(r"rail drop (\d+)$", subject):
+                    marks.add(m.group(1))
+        if os.path.isdir(self.ids_dir):
+            marks |= {name[:-len(".dropped")] for name in os.listdir(self.ids_dir) if name.endswith(".dropped")}
+        return marks
+
+    def mark_dropped(self, nn):
+        """Record a drop where it outlives the ticket's branch: one more commit on the counter branch. A ticket
+        whose file reached the base branch would otherwise look approved again once its branch is deleted."""
+        if not self.remote:
+            os.makedirs(self.ids_dir, exist_ok=True)
+            with open(os.path.join(self.ids_dir, f"{nn}.dropped"), "w") as f:
+                f.write("")
+            return True
+        if not self.online:
+            return False
+        empty = gitx.git(["mktree"], self.root, input="").stdout.strip()
+        for _ in range(20):
+            tip = self.counter(fetch=True)[0]
+            if str(nn) in self.dropped_marks():
+                return True
+            marker = gitx.out(["commit-tree", empty, *(["-p", tip] if tip else []), "-m", f"rail drop {nn}"], self.root)
+            result = gitx.push(self.root, self.remote, f"{marker}:refs/heads/{IDS_BRANCH}")
+            if result == "ok":
+                gitx.git(["update-ref", f"refs/remotes/{self.remote}/{IDS_BRANCH}", marker], self.root, check=False)
+                return True
+            if result != "rejected":
+                return False
+        return False
 
     def take_id(self, start, build, label=""):
         """Take the next free ID at or above `start`. `build(nn)` makes the ticket's first commit.

@@ -158,7 +158,8 @@ and the reviewer never writes one except in `repeats`.
   request's labels, so `rail status`, the label and every session agree. The one exception is `continued`,
   which records that a person ended a wait.
 - **Ticket IDs.** They are taken from the counter branch `rail/ids` on the remote (`rail docs tickets`).
-- **A dropped ticket's journal** goes with its branch. Its ID and the title it was added with stay in the
-  counter branch.
+- **A dropped ticket's journal** goes with its branch. Its ID, the title it was added with and the drop
+  itself (a `rail drop NN` commit) stay in the counter branch, so a dropped ticket stays dropped when its
+  branch is deleted.
 - **The local cache** in the git directory (`rail/cache/`): a requested merge, the waits already announced,
   when the save hook last ran. Nothing else needs it, and a fresh clone works without it.
