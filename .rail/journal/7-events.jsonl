@@ -1,2 +1,13 @@
 {"v":1,"at":"2026-11-12T11:46:52Z","ticket":"7","event":"accepted","by":"engine","via":"lint","tier":"LOW","contract":"2f67c1d7de03","done":"a0b57cecb78d","scope_paths":["calc/__init__.py","calc/stats.py","tests/test_calc.py","tests/test_stats.py"]}
 {"v":1,"at":"2026-11-12T11:48:21Z","ticket":"7","event":"claimed","session":"64993a07-26e3-5628-bca6-245bef70baf9","takeover":false}
+{"v":1,"at":"2026-11-12T11:48:49Z","ticket":"7","event":"step","step":"ticket-lint","status":"ran","result":"pass","patch_id":"d998d461fd893ad2362bf7eeda8816912135e4e0"}
+{"v":1,"at":"2026-11-12T11:48:49Z","ticket":"7","event":"step","step":"assumptions","status":"ran","result":"pass","patch_id":"d998d461fd893ad2362bf7eeda8816912135e4e0"}
+{"v":1,"at":"2026-11-12T11:48:49Z","ticket":"7","event":"step","step":"scope","status":"ran","result":"pass","patch_id":"d998d461fd893ad2362bf7eeda8816912135e4e0"}
+{"v":1,"at":"2026-11-12T11:48:49Z","ticket":"7","event":"step","step":"rules","status":"ran","result":"pass","patch_id":"d998d461fd893ad2362bf7eeda8816912135e4e0"}
+{"v":1,"at":"2026-11-12T11:48:49Z","ticket":"7","event":"step","step":"size","status":"ran","result":"pass","patch_id":"d998d461fd893ad2362bf7eeda8816912135e4e0","detail":"size 16/300"}
+{"v":1,"at":"2026-11-12T11:48:49Z","ticket":"7","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":"d998d461fd893ad2362bf7eeda8816912135e4e0"}
+{"v":1,"at":"2026-11-12T11:48:49Z","ticket":"7","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"d998d461fd893ad2362bf7eeda8816912135e4e0","detail":"exit 0","duration_ms":117}
+{"v":1,"at":"2026-11-12T11:48:49Z","ticket":"7","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"d998d461fd893ad2362bf7eeda8816912135e4e0","detail":"python3 -c \"import calc; exec('try:\\n    calc.power(0, -1)\\nexcept calc.CalcError:\\n    pass\\nelse:\\n    raise SystemExit(1)')\"","duration_ms":22}
+{"v":1,"at":"2026-11-12T11:48:49Z","ticket":"7","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"d998d461fd893ad2362bf7eeda8816912135e4e0","detail":"python3 -c \"import calc; from calc import stats; exec('try:\\n    stats.mean([])\\nexcept calc.CalcError:\\n    pass\\nelse:\\n    raise SystemExit(1)')\"","duration_ms":20}
+{"v":1,"at":"2026-11-12T11:48:49Z","ticket":"7","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"d998d461fd893ad2362bf7eeda8816912135e4e0","detail":"python3 -m unittest discover -s tests -q","duration_ms":61}
+{"v":1,"at":"2026-11-12T11:48:49Z","ticket":"7","event":"shipped","patch_id":"d998d461fd893ad2362bf7eeda8816912135e4e0","head":"83a8f1b410ff","tier":"LOW","size":16}
