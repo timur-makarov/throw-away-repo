@@ -416,6 +416,31 @@
           "id": "F21"
         }
       ]
+    },
+    {
+      "run": 14,
+      "role": "review",
+      "patch_id": "648baa1521203598843572eba74f1c2fe726c755",
+      "head": "be37f0128bd0",
+      "tier": "HIGH",
+      "at": "2026-11-12T18:09:53Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.0809234000000005,
+      "summary": "Ran the six Done Contract checks (all pass), confirmed .rail/engine, the pack, ruleset.json and the settings rules equal the framework at the commit in .rail/SOURCE, ran the framework's own suite against that engine (161 of 162 pass; the one error is a test import problem, not the engine), re-checked the earlier findings' areas, spot-checked about 30 ordinary commands against the guard for false denials, and probed `rail save` in scratch clones. One new advisory finding in the save path; nothing blocking.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/cli.py",
+          "line": 1127,
+          "claim": "`save_work` hands `git commit -- <paths>` names that git no longer knows or that `dirty` parsed wrongly. A file added to the index and then deleted from disk (`git add src/new.py; rm src/new.py`) makes one save exit 2 (the next passes), and an in-scope file whose name holds a double quote or ` -> ` makes every `rail save` and save hook fail, so no `saved` event is pushed and the ticket looks abandoned after 30 minutes.",
+          "check": "A save test with (a) a file staged then removed from disk and (b) an untracked file named `src/q\"x.py`, asserting `rail save` exits 0 and writes a `saved` event; reading names with `git status --porcelain -z` would make it pass.",
+          "evidence": {
+            "command": "Framework harness on the identical engine (remote_pair, ticket 1 claimed, scope src/**). Case 1: write src/new.py, `git add src/new.py`, remove it, `rail save` twice. Case 2: write `src/a b.py`, `src/q\"x.py`, `src/a -> b.py`, then `rail save`.",
+            "output": "AD src/new.py\nAD: 2 rail: git commit --quiet -m 1: save work in progress [skip ci] -- src/new.py failed: error: pathspec 'src/new.py' did not match any file(s) known to git\nAD2: 0 owner none \u00b7 SAVED  Nothing to save.\nnames: 2 rail: git commit --quiet -m 1: save work in progress [skip ci] -- src/a src/a b.py src/q\\\"x.py failed: error: pathspec 'src/a' did not match any file(s) known to git\nerror: pathspec 'src/q\\\"x.py' did not match any file(s) known to git"
+          },
+          "id": "F22"
+        }
+      ]
     }
   ]
 }
