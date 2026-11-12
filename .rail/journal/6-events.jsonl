@@ -1,3 +1,12 @@
 {"v":1,"at":"2026-11-12T11:44:08Z","ticket":"6","event":"accepted","by":"engine","via":"lint","tier":"LOW","contract":"d629cb6859c5","done":"a0bac389f806","scope_paths":[".rail/journal/**"]}
 {"v":1,"at":"2026-11-12T11:44:12Z","ticket":"6","event":"claimed","session":"64993a07-26e3-5628-bca6-245bef70baf9","takeover":false}
 {"v":1,"at":"2026-11-12T11:46:00Z","ticket":"6","event":"step","step":"sweep","status":"ran","result":"pass","patch_id":"","detail":"run 1: 0 blocking, 7 findings","duration_ms":102694,"cost_usd":0.8470595999999999}
+{"v":1,"at":"2026-11-12T11:47:20Z","ticket":"6","event":"step","step":"ticket-lint","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-12T11:47:20Z","ticket":"6","event":"step","step":"assumptions","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-12T11:47:20Z","ticket":"6","event":"step","step":"scope","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-12T11:47:20Z","ticket":"6","event":"step","step":"rules","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-12T11:47:20Z","ticket":"6","event":"step","step":"size","status":"ran","result":"pass","patch_id":"","detail":"size 0/300"}
+{"v":1,"at":"2026-11-12T11:47:20Z","ticket":"6","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-12T11:47:20Z","ticket":"6","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"","detail":"exit 0","duration_ms":114}
+{"v":1,"at":"2026-11-12T11:47:20Z","ticket":"6","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"","detail":"test -s .rail/journal/$RAIL_TICKET-summary.md","duration_ms":1}
+{"v":1,"at":"2026-11-12T11:47:20Z","ticket":"6","event":"shipped","patch_id":"","head":"54931d6a1acd","tier":"LOW","size":0}
