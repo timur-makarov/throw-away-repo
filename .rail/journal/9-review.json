@@ -811,6 +811,33 @@
           "id": "F41"
         }
       ]
+    },
+    {
+      "run": 24,
+      "role": "refuter",
+      "patch_id": "836f1a7a91cd2ccaaa82d0db7136983d721310f2",
+      "head": "5aa99cfe6b0d",
+      "tier": "HIGH",
+      "at": "2026-11-12T19:31:03Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 1.6428266,
+      "summary": "F40 holds. I ran the five commands through `rail hook guard` with this change's engine and with origin/main's engine (RAIL_CLOUD=0, cwd = the ticket worktree): the new guard prints nothing for all five, while main's denies all five. Bash stays in the worktree after `if false; then cd /tmp && true; fi`, so the push or merge runs in this project; this is a fail-open regression of the kind the ticket sets out to close, and the guard docs do not list it as intended.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 552,
+          "repeats": "F40",
+          "claim": "The KEYWORDS unwrapping makes a `cd DIR &&` behind `then`, `do` or `{` count as followed, though the shell may never run it. `if false; then cd /tmp && true; fi; git push -f origin x` (also `git push origin HEAD:main`, `gh pr merge 5`, the `while false; do ...; done` form and `false && { cd /tmp && true; }; ...`) passes the guard while bash runs it in this project; main's engine denies all five.",
+          "check": "A guard test that expects a deny for a force push, a push to the base branch and `gh pr merge` after a `cd DIR &&` inside `if false; then ...; fi`, `while false; do ...; done` and `false && { ...; }`.",
+          "evidence": {
+            "command": "for each command: printf '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":CMD},\"cwd\":\"$PWD\"}' | RAIL_CLOUD=0 .rail/bin/rail hook guard   (NEW) and the same with origin/main's .rail/bin/rail (MAIN); then bash -c 'if false; then cd /tmp && true; fi; pwd'",
+            "output": "== if false; then cd /tmp && true; fi; git push -f origin x\nNEW: \nMAIN: deny: a force push rewrites history others may have.\n== if false; then cd /tmp && true; fi; git push origin HEAD:main\nNEW: \nMAIN: deny: a push to main: only the engine's merge changes it.\n== if false; then cd /tmp && true; fi; gh pr merge 5\nNEW: \nMAIN: deny: gh pr merge merges outside the engine\n== while false; do cd /tmp && true; done; git push -f origin x\nNEW: \nMAIN: deny: a force push rewrites history others may have.\n== false && { cd /tmp && true; }; git push -f origin x\nNEW: \nMAIN: deny: a force push rewrites history others may have.\n== git push -f origin x\nNEW: deny (control)\nbash pwd after the skipped cd: /home/user/throw-away-repo/.claude/worktrees/9"
+          },
+          "id": "F40"
+        }
+      ],
+      "disputes": "F40"
     }
   ]
 }
