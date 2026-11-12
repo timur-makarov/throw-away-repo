@@ -1,1 +1,2 @@
 {"v":1,"at":"2026-11-12T11:44:08Z","ticket":"6","event":"accepted","by":"engine","via":"lint","tier":"LOW","contract":"d629cb6859c5","done":"a0bac389f806","scope_paths":[".rail/journal/**"]}
+{"v":1,"at":"2026-11-12T11:44:12Z","ticket":"6","event":"claimed","session":"64993a07-26e3-5628-bca6-245bef70baf9","takeover":false}
