@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""This project's rail launcher: it runs the engine in ../engine. The SessionStart hook puts this folder on PATH."""
+import os
+import sys
+
+if sys.version_info < (3, 11):
+    sys.stderr.write("rail needs Python 3.11 or newer (found %d.%d). On macOS: brew install python\n" % sys.version_info[:2])
+    sys.exit(2)
+
+sys.dont_write_bytecode = True  # no __pycache__ under .rail/engine to commit by mistake
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "engine"))
+from rail.cli import main  # noqa: E402
+
+sys.exit(main())
