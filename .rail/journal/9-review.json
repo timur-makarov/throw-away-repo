@@ -540,6 +540,43 @@
           "id": "F27"
         }
       ]
+    },
+    {
+      "run": 17,
+      "role": "review",
+      "patch_id": "82080e22cda120347ce250448f538fceafd0e47a",
+      "head": "65377a1e33fe",
+      "tier": "HIGH",
+      "at": "2026-11-12T18:47:12Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.6588709999999995,
+      "summary": "The six Done Contract checks pass, and the engine, pack, ruleset, workflow, ticket template and AGENTS.md match the framework at the `.rail/SOURCE` commit (cb18e10). I also ran the framework's suite on that engine (165 tests, 2 errors, both an import failure inside the test file itself), about forty guard probes in cloud and local mode, and scratch scenarios for a save during a rebase and for the claim's quiet time; that turned up one new advisory finding and one parked one, and none of the earlier findings still stands.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/cli.py",
+          "line": 1122,
+          "claim": "After a ticket has shipped, a save with no in-scope file changed writes nothing, so a live session shows no sign of life until its first edit. Sequence: ticket ships, its check goes red (RED_CHECK, same for a blocking review finding), the claiming session investigates for 30 minutes with its pulse hook firing but no in-scope edit; another session's bare `rail next` then takes the ticket over. docs/loop.md and the `claim.save_minutes` text say a working session shows it is alive at least every ten minutes.",
+          "check": "A test with the clock moved: ship, red check, the claiming session's pulse hook at +11, +22 and +29 minutes with no file changed, then `rail next` from a second session at +31 must leave the claim with the first session (for example by keeping the sign of life somewhere that doesn't move the pull request's head).",
+          "evidence": {
+            "command": "Framework harness on the identical engine (github_pair, LOW ticket 1), with the engine's clock shifted per call. Case 1: add, `rail next`. Case 2: add, `rail next`, fix, `rail advance 1`, github.ci('1-fix-add','failure'), `rail next`. Then in both: session-a's `rail hook pulse` at +11, +22 and +29 min with no file changed, and `rail next` from session-b in the other clone at +31 min.",
+            "output": "CASE 1: in flight, never shipped\n  events written by a's three pulse hooks: ['saved', 'saved']\n  b next at +31 min: None None none NO_WORK | claimed now by: session-a\nCASE 2: in flight after a red check (shipped patch, no file changed yet)\n  a next: RED_CHECK\n  events written by a's three pulse hooks: []\n  b next at +31 min: 1 in-ci none CI_WAIT | claimed now by: session-b"
+          },
+          "id": "F28"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/table.py",
+          "line": 218,
+          "claim": "While the agent is in the middle of the `git rebase main` that the failed ship's brief tells it to run, the worktree's HEAD is detached, so the engine doesn't see the worktree: a bare `rail next` picks RESUME and dies on `git worktree add ... already exists`. Main's engine has the same RESUME condition (`not f.worktree`), so this change did not cause it; the new save hooks skip the ticket silently in that state and leave the conflict untouched.",
+          "check": "A test that stops a ticket's worktree in a conflicted rebase and runs `rail next`: it must answer in the usual shape, not exit with a git error.",
+          "evidence": {
+            "command": "Framework harness on the identical engine (remote_pair, ticket 1 claimed and saved, the same line changed on main): `rail advance 1` (fails at rebase), `git rebase origin/main` in the worktree (stops on the conflict), `rail hook stop`, `rail save 1`, then `rail next`.",
+            "output": "stop hook rc 0 | out:  | err: \nstatus after hook:\n## HEAD (no branch)\nUU src/calc.py\nrail save rc 0 ... Ticket 1 is implementing: there is no work in flight to save here.\nnext: rail: git worktree add --quiet /tmp/rail-test-ajz_s8jz/a/.claude/worktrees/1 1-fix-add failed: fatal: '/tmp/rail-test-ajz_s8jz/a/.claude/worktrees/1' already exists"
+          },
+          "id": "F29"
+        }
+      ]
     }
   ]
 }
