@@ -1,0 +1,1 @@
+{"v":1,"at":"2026-11-12T15:22:44Z","ticket":"9","event":"accepted","by":"person","via":"label","tier":"HIGH","contract":"4195b27e7d69","done":"e5e1821d424f","scope_paths":[".claude/settings.json",".github/workflows/rail.yml",".gitignore",".rail/SOURCE",".rail/bin/rail",".rail/engine/**",".rail/packs/**",".rail/ruleset.json",".rail/tickets/TEMPLATE.md","AGENTS.md"]}
