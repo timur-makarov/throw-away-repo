@@ -9,6 +9,9 @@ import re
 import shlex
 
 WRAPPERS = {"sudo", "env", "command", "exec", "time", "nohup", "nice"}
+# Shell words that come before a command without being one: `then git push -f` and `{ cd -; ... }` are still a push
+# and a cd.
+KEYWORDS = {"{", "!", "if", "then", "elif", "else", "do", "while", "until"}
 SEPARATORS = {";", "&&", "||", "|", "&", "|&"}
 
 
@@ -78,7 +81,7 @@ def sequence(line):
 
 def _unwrap(words):
     """Drop `sudo -E`, `env`, VAR=value and the like, so `sudo git push -f` is still a push."""
-    while words and (words[0] in WRAPPERS or ("=" in words[0] and not words[0].startswith("-"))):
+    while words and (words[0] in WRAPPERS or words[0] in KEYWORDS or ("=" in words[0] and not words[0].startswith("-"))):
         words = words[1:]
         while words and words[0].startswith("-"):  # the wrapper's own options, such as sudo -E
             words = words[1:]
