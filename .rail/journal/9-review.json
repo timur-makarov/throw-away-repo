@@ -198,6 +198,63 @@
       "cost_usd": 2.7850858,
       "summary": "Re-reviewed the whole change and found nothing new; F1 to F9 no longer reproduce or are covered by the author's fixes. All six Done Contract checks pass, and `.rail/engine`, the pack, the ruleset, the workflow and the settings hooks match a fresh clone of the framework at the `.rail/SOURCE` commit (2ebe661). I also probed the guard with about 40 commands in local and cloud mode, ran `rail status` and `rail doctor` on this repository, and ran a scratch test of a save hook firing mid-rebase (it skips safely). I did not run the framework's own test suite against the vendored copy.",
       "findings": []
+    },
+    {
+      "run": 8,
+      "role": "security",
+      "patch_id": "081a0911e93ba620c3bddbcc844e98b953691889",
+      "head": "f45d1c4a8f46",
+      "tier": "HIGH",
+      "at": "2026-11-12T16:48:25Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.3082762,
+      "summary": "Security seat: ran ~80 command lines through `rail hook guard` and compared `guard.deny`/`guard.ask` against the engine on main, then built a scratch repository to exercise the new contract-merged approval path, and read the save, provision and machine-hook code. The Done Contract's guard cases hold, but the new code adds two authorization holes (one guard regression, one self-approval path) and an unchecked auto-push.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/state.py",
+          "line": 199,
+          "claim": "A ticket file on the base branch with no branch and no ship is now recorded as `accepted by person via merge`, with no check that a person merged a contract pull request. Ticket files are excluded from the scope check, so an auto-merged LOW ticket whose branch adds `.rail/tickets/99.md` (tier HIGH, scope `.rail/engine/**`) gets the HIGH contract approved and claimed by the next `rail next` with no person involved; the engine on main showed the same ticket as `dropped`.",
+          "check": "A test: commit a HIGH ticket file to the base branch under another ticket's `Ticket:` trailer, with no branch and no pull request, run `rail next`, and assert no `accepted` event with `by: person` is written.",
+          "evidence": {
+            "command": "scratch repo, no remote: commit .rail/tickets/99.md (tier HIGH, scope .rail/engine/**) on main under trailer 'Ticket: 1 / Tier: LOW'; RAIL_CLOUD=0 .rail/bin/rail next --json; git show 99-change-the-engine:.rail/journal/99-events.jsonl  (and `rail status` with main's engine on a copy)",
+            "output": "99 implementing {'code': 'IMPLEMENT'} [{'step': 'contract', 'status': 'ran', 'result': 'pass', 'detail': 'its pull request was merged before the work: taken as the approval'}, ...]\n{\"v\":1,...,\"ticket\":\"99\",\"event\":\"accepted\",\"by\":\"person\",\"via\":\"merge\",\"tier\":\"HIGH\",...}\n{\"v\":1,...,\"event\":\"claimed\",...}\nOLD ENGINE: 99      dropped       none   HIGH"
+          },
+          "id": "F10"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 347,
+          "claim": "`_gh_named` treats any `gh` argument containing `github.com/` as naming a repository, including the value of `--body` or `-f`, so a merge of this project's pull request passes when its message mentions another repository's URL: `gh pr merge 5 --body \"see github.com/other/repo\"`. The engine on main denied this command; with the new rule that a merged unshipped pull request counts as the person's approval, it also lets an agent approve its own contract.",
+          "check": "A guard test: `gh pr merge 5 --body \"see github.com/other/repo\"` and `gh api -X PUT repos/{owner}/{repo}/pulls/5/merge -f commit_message=https://github.com/other/repo/issues/1` must both return deny.",
+          "evidence": {
+            "command": "guard.deny(cmd,'main','9-x',cwd=worktree,locate=...,repo='timur-makarov/throw-away-repo') with main's engine and this change's engine; also printf ... | .rail/bin/rail hook guard",
+            "output": "OLD\nDENY  gh pr merge 5 --body \"see github.com/other/repo\"\nNEW\npass  gh pr merge 5 --body \"see github.com/other/repo\"\npass  gh api -X PUT repos/{owner}/{repo}/pulls/5/merge -f commit_message=https://github.com/other/repo/issues/1\nDENY  gh api -X PUT repos/{owner}/{repo}/pulls/5/merge"
+          },
+          "id": "F11"
+        },
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/cli.py",
+          "line": 1093,
+          "claim": "The new Stop and PostToolUse hooks commit and push every untracked file inside `scope_paths` with no check, and `.gitignore` lists only `.claude/worktrees/` and `__pycache__/`. A credential or dump file an agent writes into an in-scope folder (for example `calc/token.json` under scope `calc/**`) is pushed to GitHub at the end of the turn, before verify's secret scan ever runs.",
+          "check": "A test that `save_work` leaves out untracked files matching the guard's secret patterns (`.env*`, `*.pem`, `*.key`), or runs the project's secret scan before the push.",
+          "id": "F12"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 422,
+          "claim": "The merge deny matches only `gh pr merge` with the two words adjacent, and the guard doesn't read command substitutions or `case` arms, so `gh pr -R timur-makarov/throw-away-repo merge 5`, `echo $(git push origin HEAD:main)` in backticks or `$(...)`, `case x in x) git push -f origin x;; esac` and `cd /tmp && export GIT_DIR=<repo>/.git && git push origin main` all pass. These passed on main's engine too.",
+          "check": "Guard tests for each of these lines expecting deny.",
+          "evidence": {
+            "command": "same comparison script, main's engine vs this change's",
+            "output": "OLD and NEW both:\npass  gh pr -R timur-makarov/throw-away-repo merge 5\npass  $(git push -f origin x)\npass  echo `git push origin HEAD:main`\npass  case x in x) git push -f origin x;; esac\npass  cd /tmp && export GIT_DIR=/home/user/throw-away-repo/.git && git push origin main"
+          },
+          "id": "F13"
+        }
+      ]
     }
   ]
 }
