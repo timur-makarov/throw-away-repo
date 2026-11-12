@@ -333,3 +333,4 @@
 {"v":1,"at":"2026-11-12T19:18:36Z","ticket":"9","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"836f1a7a91cd2ccaaa82d0db7136983d721310f2","detail":"test -f .rail/ruleset.json && ! grep -q \"Bash(sudo\" .claude/settings.json","duration_ms":3}
 {"v":1,"at":"2026-11-12T19:18:36Z","ticket":"9","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"836f1a7a91cd2ccaaa82d0db7136983d721310f2","detail":"python3 -m unittest discover -s tests -q","duration_ms":57}
 {"v":1,"at":"2026-11-12T19:18:36Z","ticket":"9","event":"shipped","patch_id":"836f1a7a91cd2ccaaa82d0db7136983d721310f2","head":"6cce53a83f1f","tier":"HIGH","size":2474}
+{"v":1,"at":"2026-11-12T19:25:57Z","ticket":"9","event":"step","step":"review","status":"ran","result":"pass","patch_id":"836f1a7a91cd2ccaaa82d0db7136983d721310f2","detail":"run 22: 0 blocking, 0 findings","duration_ms":437756,"cost_usd":3.211056399999999}
