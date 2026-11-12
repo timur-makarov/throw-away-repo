@@ -111,6 +111,31 @@
           "id": "F6"
         }
       ]
+    },
+    {
+      "run": 4,
+      "role": "review",
+      "patch_id": "9105952b8827ad8769cfaaf1f93b598f695cbe4b",
+      "head": "760f1496e755",
+      "tier": "HIGH",
+      "at": "2026-11-12T16:15:20Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.6099272,
+      "summary": "Re-reviewed the whole change. The vendored engine and pack are byte-identical to the framework at fdf0911 (the commit in .rail/SOURCE), and the settings, ruleset, workflow, template, AGENTS.md section and .gitignore match its seed. All six Done Contract checks pass, the framework's 149 tests pass against this engine, and F1 to F6 are fixed. Probing the guard with about 60 command spellings and a save hook fired mid-rebase turned up one remaining advisory guard gap.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 115,
+          "claim": "`_known` expands `$OLDPWD` with the hook process's own environment, not the shell's value at that point in the command. So `cd OTHER_REPO && cd \"$OLDPWD\" && git push origin main` (the same as `cd -`, sweep F1) is allowed whenever the hook inherits an OLDPWD outside the project, although docs/guards.md says a variable the guard can't follow is judged as this project's.",
+          "check": "A guard test that sets OLDPWD in the hook's environment to a directory outside the project and expects deny for `cd OTHER && cd \"$OLDPWD\" && git push origin main`; variables the shell changes during a command (OLDPWD, PWD) should count as unknown.",
+          "evidence": {
+            "command": "Piped each command line to `RAIL_CLOUD=0 .rail/bin/rail hook guard` as a Bash PreToolUse event with cwd set to the ticket's worktree; OTHER is another git repository on branch main. First run with OLDPWD=/ inherited by the hook, second with `env -u OLDPWD`.",
+            "output": "OLDPWD=/\nallow <= cd OTHER && cd \"$OLDPWD\" && git push origin main\n(env -u OLDPWD) \"permissionDecision\": \"deny\" <= cd OTHER && cd \"$OLDPWD\" && git push origin main\n\"permissionDecision\": \"deny\" <= cd OTHER && cd - && git push origin main"
+          },
+          "id": "F7"
+        }
+      ]
     }
   ]
 }
