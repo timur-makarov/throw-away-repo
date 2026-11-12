@@ -1,0 +1,43 @@
+{
+  "schema": "review/v1",
+  "ticket": "9",
+  "runs": [
+    {
+      "run": 1,
+      "role": "review",
+      "patch_id": "4c9ee8d873de287572f9ffeb4bc087e0b11d9998",
+      "head": "bfb4ac7653f6",
+      "tier": "HIGH",
+      "at": "2026-11-12T15:29:17Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.2410630000000005,
+      "summary": "Ran all six Done Contract checks (pass), diffed the vendored engine, pack, ruleset, workflow, template and AGENTS.md against the framework at the SOURCE commit (identical; settings rules match the seed; the framework's own 143 tests pass), and probed the guard by hand. Then exercised claim, save, the stop and pulse hooks, takeover and review in a scratch project with a local remote: the claim rules behave as described, but a review run that starts ten minutes after the ticket's last event leaves the branch diverged from the remote, and the new engine revives ticket 8.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/review.py",
+          "line": 275,
+          "claim": "`run` reads `head` before `keep_alive`, which commits and pushes a `saved` event when the ticket's last event is at least `save_minutes` old; after the reviewer, `git reset --hard head` moves the branch back behind that pushed commit. The review run is then committed on the old head and its push is refused as a non-fast-forward, so the run never reaches the remote and every later push of the branch is refused too (sequence: a ticket in `reviewing`, `rail advance` more than ten minutes after its last event, such as a session coming back from a pause or after an invalid-output review).",
+          "check": "A test that runs `rail advance` on a ticket in `reviewing` whose last event is older than `[claim] save_minutes`, and asserts that the local branch and the remote branch have the same tip afterwards.",
+          "evidence": {
+            "command": "Scratch clone with a bare remote, MEDIUM ticket 2 shipped, first review run invalid (state reviewing). Then `python3 later.py advance 2` (rail with minutes_since() answering 11 more) and `git rev-parse --short` / `git log --oneline -3` of the local and remote branch; then a plain `rail advance 2`.",
+            "output": "=== heads before (local, remote)\n829bd19\n829bd19\n=== advance, eleven minutes later\n  review: ran, pass (run 1: 0 blocking, 0 findings)\n=== heads after (local, remote)\n5c27963\nb89f942\n=== local\n5c27963 2: review\n829bd19 2: review failed\n=== remote\nb89f942 2: still at work [skip ci]\n829bd19 2: review failed\n=== advance again: heads unchanged\n5c27963\nb89f942"
+          },
+          "id": "F1"
+        },
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/state.py",
+          "line": 198,
+          "claim": "With this engine ticket 8 is no longer `merged`: its contract pull request #11 was merged with no ship, so it becomes `new` with owner `agent` (CONTRACT_MERGED). After ticket 9 merges, the next `rail next` records the merge as the owner's approval of ticket 8 and hands an agent the same contract ticket 9 just delivered; nothing in the change drops ticket 8 or says a person must.",
+          "check": "After the change, `rail status --json` lists no ticket with owner `agent` whose Done Contract equals that of a merged ticket; here, ticket 8 is dropped before or with the merge.",
+          "evidence": {
+            "command": ".rail/bin/rail status",
+            "output": "7       merged        none   LOW     3h    PR #12\n8       new           agent  HIGH          PR #11\n9       implementing  none   HIGH    0m    another session's work, quiet 0 min"
+          },
+          "id": "F2"
+        }
+      ]
+    }
+  ]
+}
