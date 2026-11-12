@@ -24,4 +24,6 @@ def div(a, b):
 
 
 def power(base, exponent):
+    if base == 0 and exponent < 0:
+        raise CalcError("zero to a negative power")
     return base ** exponent
