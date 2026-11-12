@@ -40,9 +40,9 @@ auto mode included, which is why `sudo` and the like are asked by the hook and n
 
 **It protects this project's branches, not every repository.** After `cd DIR &&`, or with `git -C DIR`, a
 command in another repository is left alone. Whatever the guard can't follow (`cd -`, `popd`, a subshell, a
-`cd` before `;` or `||`, `--git-dir`, a variable) is judged as this project's. A command after a shell
-keyword, as in `then git push -f` or `{ cd -; ... }`, is read as that command. A `gh` merge is judged by the
-repository it names.
+`cd` before `;` or `||`, `--git-dir`, a variable other than `$HOME` and `$PWD`) is judged as this
+project's. A command after a shell keyword, as in `then git push -f` or `{ cd -; ... }`, is read as that
+command. A `gh` merge is judged by the repository it names.
 
 **A repository's hooks and permission rules load only in a session that starts with that one
 repository.** For a cloud session with several repositories, or a project thread, `rail provision` writes

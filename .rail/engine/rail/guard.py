@@ -109,10 +109,22 @@ def _git_dir(words, here):
     return here
 
 
+def _expand(target, here):
+    """A word with ~, $HOME and $PWD filled in as the shell would at this point of the command; `here` is where
+    the shell stands, None when that isn't known. Every other variable stays as written: the command itself may
+    have set it, and the shell moves $OLDPWD with each cd, so the hook's own environment says nothing about them."""
+    def value(match):
+        name = match.group(1) or match.group(2)
+        if name == "HOME":
+            return os.path.expanduser("~")
+        return here if name == "PWD" and here else match.group(0)
+    return os.path.expanduser(re.sub(r"\$(?:(\w+)|\{(\w+)\})", value, target))
+
+
 def _known(target, here):
-    """A path as the shell would see it, or None when it can't be known: a variable that can't be expanded, or a
+    """A path as the shell would see it, or None when it can't be known: a variable the guard can't follow, or a
     relative path from an unknown place."""
-    expanded = os.path.expanduser(os.path.expandvars(target))
+    expanded = _expand(target, here)
     if "$" in expanded or (here is None and not os.path.isabs(expanded)):
         return None
     return _resolve(target, here or "/")
@@ -366,15 +378,14 @@ def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
 
 
 def _resolve(target, cwd):
-    """A path as the shell would see it: variables from the hook's environment (the agent's), then ~."""
-    path = os.path.expanduser(os.path.expandvars(target))
-    return os.path.realpath(os.path.join(cwd, path))
+    """A path as the shell would see it from cwd. A variable the guard can't follow stays in it as written."""
+    return os.path.realpath(os.path.join(cwd, _expand(target, cwd)))
 
 
 def _outside(target, cwd, top):
     """Whether a path an rm -r names lies outside the worktree. Real paths, so a symlinked /tmp agrees.
-    A variable the hook can't expand could point anywhere, so it counts as outside."""
-    if "$" in os.path.expandvars(target) or "$" in cwd:
+    A variable the guard can't follow could point anywhere, so it counts as outside."""
+    if "$" in _expand(target, cwd) or "$" in cwd:
         return True
     path, top = _resolve(target, cwd), os.path.realpath(top)
     return path != top and not path.startswith(top.rstrip("/") + "/")
