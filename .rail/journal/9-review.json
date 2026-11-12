@@ -38,6 +38,42 @@
           "id": "F2"
         }
       ]
+    },
+    {
+      "run": 2,
+      "role": "review",
+      "patch_id": "7bb0821b4c44a69b8d37a27894a3db39cd3a00ed",
+      "head": "35d40d342db7",
+      "tier": "HIGH",
+      "at": "2026-11-12T15:39:57Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.4139758000000002,
+      "summary": "Re-reviewed the whole change. All six Done Contract checks pass. `.rail/engine`, `.rail/packs`, `.rail/ruleset.json`, the workflow and the ticket template are byte-identical to the framework at the commit in `.rail/SOURCE`, and that commit's own 145 tests pass. `.claude/settings.json` has the seed's rules. F1 is fixed (the sign of life is written before the head is read) and F2 is fixed (`rail status` shows ticket 8 dropped, with a `rail drop 8` mark on `rail/ids`). About 40 guard probes found one remaining fail-open, reported below with one wording mismatch; neither blocks the merge.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 324,
+          "claim": "A `cd` the guard can't follow is recognised only when `cd`, `pushd` or `popd` is the first word of a simple command. After `cd OTHER_REPO &&`, a `cd -` inside a brace group, after `then`, or after `!` is missed, so the push to `main` or `gh pr merge` that follows is judged as the other repository's and allowed. This is the sweep's F1 case in another spelling, and `docs/guards.md` says whatever can't be followed is judged as this project's.",
+          "check": "A guard test that expects deny for `cd OTHER && { cd -; git push origin main; }`, `cd OTHER && if true; then cd -; fi && git push origin main` and `cd OTHER && ! cd - && git push origin main`, where OTHER is another git repository.",
+          "evidence": {
+            "command": "Piped each command line to `RAIL_CLOUD=0 .rail/bin/rail hook guard` as a Bash PreToolUse event with cwd set to the ticket's worktree; /tmp/other is another git repository on branch main.",
+            "output": "allow <= cd /tmp/other && { cd -; git push origin main; }\nallow <= cd /tmp/other && if true; then cd -; fi && git push origin main\nallow <= cd /tmp/other && ! cd - && git push origin main\nallow <= cd /tmp/other && { cd -; gh pr merge 5; }\ndeny <= cd /tmp/other && cd - && git push origin main"
+          },
+          "id": "F3"
+        },
+        {
+          "severity": "advisory",
+          "file": ".rail/tickets/9.md",
+          "line": 21,
+          "claim": "The ticket's Why says work a session abandoned is resumed after an hour, but the engine copied in resumes it after `[claim] stale_minutes` = 30 (config.py default, and the ticket's own Look at says 30 minutes). The Why becomes the pull request's description, so the owner is told twice the real limit.",
+          "evidence": {
+            "command": "grep -n \"hour\\|30 min\" .rail/tickets/9.md; grep -n stale_minutes .rail/engine/rail/config.py",
+            "output": "21:looks, and work a session abandoned is resumed after an hour; `rail next` takes in issues labelled `rail`\n40:... a quiet one is resumed after 30 minutes.\n\"claim\": {\"stale_minutes\": 30, \"save_minutes\": 10},"
+          },
+          "id": "F4"
+        }
+      ]
     }
   ]
 }
