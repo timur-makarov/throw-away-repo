@@ -219,10 +219,36 @@ class Project:
     def cache_read(self, kind, key):
         """The local cache, keyed by ticket, in the git common dir: notes nothing else needs."""
         path = os.path.join(self.common, "rail", "cache", kind, key)
-        if not os.path.exists(path):
+        if not key or not os.path.isfile(path):
             return None
         with open(path) as f:
             return f.read().strip() or None
+
+    def busy(self, nn, wait=False):
+        """Hold a ticket while one engine command works in its worktree. Returns the hold, or None when another
+        command has it and `wait` is false. A save that fired while advance ran a review would commit the reviewer's
+        scratch files, and the reset after the review would leave the branch behind that push. The hold is a file
+        lock, so it goes when it is closed or the process ends, however it ends."""
+        import fcntl
+
+        holds = self.__dict__.setdefault("_holds", {})
+        if str(nn) in holds:
+            return holds[str(nn)]  # this command has it already: a file lock taken twice would wait for itself
+        path = os.path.join(self.common, "rail", "cache", "busy", str(nn))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        handle = open(path, "w")
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
+        except OSError:
+            handle.close()
+            return None
+        holds[str(nn)] = handle  # kept until release, or until the command ends
+        return handle
+
+    def release(self, nn):
+        handle = self.__dict__.get("_holds", {}).pop(str(nn), None)
+        if handle:
+            handle.close()
 
     def cache_write(self, kind, key, value):
         path = os.path.join(self.common, "rail", "cache", kind, key)

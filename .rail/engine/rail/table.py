@@ -134,7 +134,7 @@ def _held(f):
 def _save_note(f):
     """Where no hook saves for the session, the agent does: unsaved work is lost with the machine, and a ticket that
     shows no life is taken to be abandoned."""
-    if f.project.cache_read("hooks", f.project.session or ""):
+    if f.project.session and f.project.cache_read("hooks", f.project.session):
         return ""
     return (f"\nNothing saves your work for you in this session. Run rail save {f.id} every ten minutes or so of work"
             " and before you stop: it pushes what you have, and shows other sessions this ticket is alive.")

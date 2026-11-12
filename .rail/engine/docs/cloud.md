@@ -98,6 +98,8 @@ repository. A session with several repositories, and a thread in a project, load
   the saves and the session's snapshot cover every Rail repository below the session's folder;
 - where the repository's own hooks did load, the machine's step aside, so nothing runs twice;
 - `rail` works everywhere, because provision linked it onto `PATH`;
+- the link and the hooks call the engine in the project's own checkout, so a ticket's copy of a newer
+  engine leaves them alone, and provision sets them up once that engine is merged;
 - the allow rules are a repository's and don't load there, so auto mode reviews `rail` commands itself;
 - the ruleset on GitHub stays the guard nothing can get around, and `rail ci` repeats every ship check.
 

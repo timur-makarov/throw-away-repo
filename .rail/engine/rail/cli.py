@@ -225,6 +225,7 @@ def transition(project, f, code):
     """Make one of the moves the table leaves to `next`. False when another clone got there first."""
     t = f.t
     run = steps.Run(project, t)
+    project.busy(t.id, wait=True)  # no save while the engine moves the ticket's branch or worktree
     if code == "ACCEPT_AUTO":
         ensure_local(project, t)
         project.append_events(t, [accepted_event(t.id, f.ticket, f.tier, "engine", "lint")], "accept")
@@ -613,6 +614,7 @@ def cmd_sweep(project, args):
     f, receipts = settle(project, nn, explicit=True)
     if f is None or f.state != "implementing" or not f.worktree:
         return from_facts(f, receipts) if f else answer(nn, code="CLAIMED_ELSEWHERE")
+    project.busy(nn, wait=True)
     if not f.sweep_done:
         run = steps.Run(project, f.t)
         sweep.run(project, f, run)
@@ -885,6 +887,7 @@ def cmd_advance(project, args):
             raise RailError("which ticket? Run it in the ticket's worktree, or pass --ticket NN")
         key = mine[0].id
     nn = project.find(key, tickets).id
+    project.busy(nn, wait=True)  # held to the end of the command: no save while it ships and reviews
     receipts, first = [], True
     for _ in range(12):
         tickets, facts = load(project)
@@ -1115,7 +1118,15 @@ def save_all(project, via, only=None):
             if f.taken_from_me or only:
                 notes.append(first_match(f)[2]["brief"])
             continue
+        hold = project.busy(f.id)
+        if hold is None:
+            # Another rail command is at work in this ticket's worktree, such as advance inside a review: what is
+            # there now may be the reviewer's scratch files. That command pushes when it is done.
+            if only:
+                notes.append(f"Ticket {f.id}: another rail command is at work on it, so nothing was saved now.")
+            continue
         saved = save_work(project, f, via)
+        project.release(f.id)
         if saved is None:
             continue
         inside, outside, pushed = saved
@@ -1165,9 +1176,25 @@ def _provision_wanted(project):
     Rail's own part (the link and the machine's hooks)."""
     import hashlib
     command = project.config["commands"]["provision"]
-    if not command and not cloud():
+    machine = MACHINE_SETUP if _sets_up_machine(project) else ""
+    if not command and not machine:
         return None  # nothing to do here
-    return hashlib.sha256(f"{command}\n{MACHINE_SETUP if cloud() else ''}".encode()).hexdigest()
+    return hashlib.sha256(f"{command}\n{machine}".encode()).hexdigest()
+
+
+def _sets_up_machine(project):
+    """Whether provision does Rail's own part here: only on a cloud machine, and only when the engine in the
+    project's own checkout sets up the same thing as this one. The link and the hooks call the project's engine,
+    and a ticket that changes the engine runs its own copy: hooks an older engine doesn't know would fail on every
+    tool call."""
+    if not cloud():
+        return False
+    try:
+        with open(os.path.join(project.root, ".rail", "engine", "rail", "cli.py")) as f:
+            theirs = re.search(r'^MACHINE_SETUP = "([^"]*)"', f.read(), re.M)
+    except OSError:
+        return False
+    return bool(theirs) and theirs.group(1) == MACHINE_SETUP
 
 
 def provisioned(project):
@@ -1235,7 +1262,7 @@ def run_provision(project, run):
     root. Notes that it ran. Returns whether it passed."""
     import shlex
 
-    passed = install_machine(project, run) if cloud() else True
+    passed = install_machine(project, run) if _sets_up_machine(project) else True
     command = project.config["commands"]["provision"]
     if passed and command:
         as_root = command
@@ -1273,8 +1300,11 @@ def cmd_provision(project, args):
         return answer(owner="human" if command else "none", code="PROVISION_LOCAL",
                       action={"kind": "human_wait" if command else "rest", "brief": brief})
     if _provision_wanted(project) is None:
+        other = ("" if not cloud() or _sets_up_machine(project) else
+                 " The link and the machine's hooks call the engine in the project's own checkout, and that one isn't"
+                 " this one, so this copy leaves them alone: run provision from the project's own once it has this engine.")
         return answer(code="NO_WORK", action={"kind": "rest", "brief": "No provision command is set ([commands]"
-                                                                       " provision in .rail/config.toml)."})
+                                                                       " provision in .rail/config.toml)." + other})
     if provisioned(project) and not args.force:
         return answer(code="PROVISIONED", action={"kind": "rest", "brief": "This machine is provisioned already;"
                                                                            " rail provision --force runs it again."})
