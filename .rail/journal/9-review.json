@@ -161,6 +161,31 @@
           "id": "F8"
         }
       ]
+    },
+    {
+      "run": 6,
+      "role": "review",
+      "patch_id": "3b1823c0486ce65fbf5dd71aaae82372df560b3a",
+      "head": "5c42034f72fb",
+      "tier": "HIGH",
+      "at": "2026-11-12T16:39:13Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.5284538000000003,
+      "summary": "Ran all six Done Contract checks (pass), confirmed the engine, pack, ruleset, workflow and settings match the framework at the commit in .rail/SOURCE, ran the framework's 151 tests against that identical engine (pass), replayed about 85 guard command lines including the spellings from F3, F7 and F8 (all now denied or asked as documented), and drove `rail save` and the hooks in scratch clones with a bare remote. F1 to F8 are fixed; one new advisory problem in the save path.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/cli.py",
+          "line": 1100,
+          "claim": "`save_work` passes every dirty path to `git add -A -- <paths>`, which dies with `pathspec did not match any files` for a staged deletion. After `git rm src/old.py` in a ticket's worktree (or one save after `git mv`, which commits only the new name and leaves `D old` staged), every `rail save` exits 2 and the Stop and pulse hooks fail without telling the agent: nothing is pushed and no `saved` event is written, so the work isn't saved and the ticket looks abandoned to other sessions after 30 minutes.",
+          "check": "A test in tests/test_save.py: claim a ticket, `git rm` (and separately `git mv`) an in-scope file in its worktree, run `rail save` twice, and assert exit 0, a `saved` event, and the deletion on the remote branch.",
+          "evidence": {
+            "command": "Scratch clone with a bare remote (framework harness, same engine), ticket 1 claimed with scope src/**. Case 1: edit src/calc.py, `git rm -q src/old.py`, then `rail save` and the Stop hook. Case 2: `git mv src/old.py src/new.py`, then `rail save` twice.",
+            "output": "== git rm: M src/calc.py\nD  src/old.py\nrail save -> rc 2 rail: git add -A -- src/calc.py src/old.py failed: fatal: pathspec 'src/old.py' did not match any files\nstop hook -> rc 0 rail hook stop: git add -A -- src/calc.py src/old.py failed: fatal: pathspec 'src/old.py' did not match any files\nremote calc.py: return a - b\n1: claim\n== git mv: R  src/old.py -> src/new.py\nrail save 1 -> rc 0 ... save: ran, pass (ticket 1: 1 files)\nstatus: D  src/old.py\nsrc/calc.py src/new.py src/old.py\nrail save 2 -> rc 2 rail: git add -A -- src/old.py failed: fatal: pathspec 'src/old.py' did not match any files"
+          },
+          "id": "F9"
+        }
+      ]
     }
   ]
 }
