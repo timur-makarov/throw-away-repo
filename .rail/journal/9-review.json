@@ -441,6 +441,80 @@
           "id": "F22"
         }
       ]
+    },
+    {
+      "run": 15,
+      "role": "security",
+      "patch_id": "648baa1521203598843572eba74f1c2fe726c755",
+      "head": "9bb1d188c1b9",
+      "tier": "HIGH",
+      "at": "2026-11-12T18:16:30Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.6645179999999997,
+      "summary": "Security seat, re-review. I ran about 170 commands through `rail hook guard` with this change's engine and with origin/main's, and ran each candidate bypass in real bash with a stub `git` to confirm the hidden command executes. F10, F11, F20 and F21 hold as fixed, and the `--owner` ask rule holds in every position I tried. The new line reader still hides commands that main's engine denies, in four ways. I read the provision, save and claim paths without running them and found nothing to report there.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 119,
+          "claim": "The `$'...'` quoting added for F19 is entered whenever a `'` follows a `$` character, even an escaped one. `echo \\$'a\\'` + newline + `git push -f origin 9-x` + newline + `#'` is read as one quoted `echo`, so the push passes, though bash runs it as a command of its own; main's engine denies it.",
+          "check": "A guard test that denies \"echo \\\\$'a\\\\'\\ngit push -f origin 9-x\\n#'\", plus a differential test: for each generated line, anything a stubbed bash runs as `git push -f` must be denied.",
+          "evidence": {
+            "command": "python3 verify.py  (each case through `.rail/bin/rail hook guard` with this change's engine and origin/main's, then `bash -c` with a stub git on PATH)",
+            "output": "new=pass  old=deny  bash=['RAN: git push -f origin 9-x'] \"echo \\\\$'a\\\\'\\ngit push -f origin 9-x\\n#'\""
+          },
+          "id": "F23"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 135,
+          "claim": "A `<<` in old-style arithmetic `$[...]` or inside `${...}` is still read as a here-document, so the following lines are dropped as its body: `echo $[1<<EOF]` + newline + `git push -f origin 9-x` + newline + `EOF]` passes, and so does `echo ${x:-<<EOF}` ... `EOF}`. Bash runs the push in both; main's engine denies both. This is F19's arithmetic case, which was fixed only for `((`.",
+          "repeats": "F19",
+          "check": "Guard tests that deny 'echo $[1<<EOF]\\ngit push -f origin 9-x\\nEOF]' and 'echo ${x:-<<EOF}\\ngit push -f origin 9-x\\nEOF}'.",
+          "evidence": {
+            "command": "python3 verify.py  (same comparison)",
+            "output": "new=pass  old=deny  bash=['RAN: git push -f origin 9-x'] 'echo $[1<<EOF]\\ngit push -f origin 9-x\\nEOF]'\nnew=pass  old=deny  bash=['RAN: git push -f origin 9-x'] 'echo ${x:-<<EOF}\\ngit push -f origin 9-x\\nEOF}'"
+          },
+          "id": "F19"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 138,
+          "claim": "The here-document delimiter is read differently from bash when it is partly quoted, so the guard skips more lines than the shell does. With `cat <<E\"O\"F`, bash ends the body at `EOF` and runs the `git push -f origin 9-x` after it, while the guard waits for a line `E\"O\"F` and drops the push as body; `cat <<'E'OF` does the same with a later line `E`. Main's engine denies both.",
+          "check": "Guard tests that deny 'cat <<E\"O\"F\\nx\\nEOF\\ngit push -f origin 9-x\\nE\"O\"F' and \"cat <<'E'OF\\nEOF\\ngit push -f origin 9-x\\nE\".",
+          "evidence": {
+            "command": "python3 verify.py  (same comparison)",
+            "output": "new=pass  old=deny  bash=['RAN: git push -f origin 9-x'] 'cat <<E\"O\"F\\nx\\nEOF\\ngit push -f origin 9-x\\nE\"O\"F'\nnew=pass  old=deny  bash=['RAN: git push -f origin 9-x'] \"cat <<'E'OF\\nEOF\\ngit push -f origin 9-x\\nE\""
+          },
+          "id": "F24"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 50,
+          "claim": "A here-document's body is now left out unless `FEEDS_SHELL` matches its line, and that pattern misses most ways to hand it to a shell. `timeout 60 bash <<EOF`, `. /dev/stdin <<EOF`, `\"bash\" <<EOF`, `{ bash; } <<EOF`, `if true; then bash <<EOF` and `! bash <<EOF`, each followed by `git push -f origin 9-x` (or `git push origin HEAD:main`) and `EOF`, all pass and all run the push. Main's engine denies every one, because it read body lines as commands.",
+          "check": "A guard test that denies a push in a here-document for each of these line shapes; or decide by the unwrapped command (`_unwrap` already knows `timeout`, keywords and paths) and read the body as commands whenever the consumer isn't a known data reader.",
+          "evidence": {
+            "command": "python3 verify.py  (same comparison)",
+            "output": "new=pass  old=deny  bash=['RAN: git push -f origin 9-x'] 'timeout 60 bash <<EOF\\ngit push -f origin 9-x\\nEOF'\nnew=pass  old=deny  bash=['RAN: git push origin HEAD:main'] '. /dev/stdin <<EOF\\ngit push origin HEAD:main\\nEOF'\nnew=pass  old=deny  bash=['RAN: git push -f origin 9-x'] '\"bash\" <<EOF\\ngit push -f origin 9-x\\nEOF'\nnew=pass  old=deny  bash=['RAN: git push -f origin 9-x'] '{ bash; } <<EOF\\ngit push -f origin 9-x\\nEOF'\nnew=pass  old=deny  bash=['RAN: git push -f origin 9-x'] 'if true; then bash <<EOF\\ngit push -f origin 9-x\\nEOF\\nfi'\nnew=pass  old=deny  bash=['RAN: git push -f origin 9-x'] '! bash <<EOF\\ngit push -f origin 9-x\\nEOF'"
+          },
+          "id": "F25"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 106,
+          "claim": "A `#` that bash doesn't read as a comment is taken as one, and the rest of the line is dropped: `echo ${x/ #/}; git push -f origin 9-x`, `echo \\ #; git push -f origin 9-x` and `echo a\\;#b; git push origin HEAD:main` pass and run the push. Main's engine passes them too, through shlex's own comment handling.",
+          "check": "Guard tests that deny these three lines.",
+          "evidence": {
+            "command": "python3 verify.py  (same comparison)",
+            "output": "new=pass  old=pass  bash=['RAN: git push -f origin 9-x'] 'echo ${x/ #/}; git push -f origin 9-x'\nnew=pass  old=pass  bash=['RAN: git push -f origin 9-x'] 'echo \\\\ #; git push -f origin 9-x'\nnew=pass  old=pass  bash=['RAN: git push origin HEAD:main'] 'echo a\\\\;#b; git push origin HEAD:main'"
+          },
+          "id": "F26"
+        }
+      ]
     }
   ]
 }
