@@ -56,6 +56,24 @@ def api(method, path, body=None):
     return json.loads(payload) if payload else None
 
 
+def raw(path):
+    """A REST call whose answer isn't JSON, such as a job's log. Returns the text, or None."""
+    try:
+        result = subprocess.run(["gh", "api", path], capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return result.stdout if result.returncode == 0 else None
+
+
+def log_tail(log, lines=60):
+    """What a failed Actions job printed last: the failing step's output up to its first ##[error] line."""
+    rows = [re.sub(r"\x1b\[[0-9;]*m", "", re.sub(r"^\ufeff?\d{4}-\d\d-\d\dT[\d:.]+Z ", "", row))
+            for row in log.splitlines()]
+    end = next((i for i, row in enumerate(rows) if row.startswith("##[error]")), len(rows) - 1)
+    start = max((i for i, row in enumerate(rows[:end]) if row.startswith("##[endgroup]")), default=-1) + 1
+    return "\n".join([row for row in rows[start:end + 1] if row.strip()][-lines:])
+
+
 def doctor_checks(project, repo):
     """[(name, passed or None, detail)] for the GitHub side of the setup (plan, sections 11 and 14)."""
     found = []
@@ -231,10 +249,19 @@ class Forge:
                     waiting = True
                 elif run.get("conclusion") not in ("success", "neutral", "skipped"):
                     output = run.get("output") or {}
-                    failing.append((name, "\n".join(x for x in (output.get("title"), output.get("summary"),
-                                                                  output.get("text")) if x)[:3000]))
+                    said = "\n".join(x for x in (output.get("title"), output.get("summary"), output.get("text")) if x)
+                    failing.append((name, (said.strip() or self.job_output(run))[:3000]))
             self._checks[sha] = ("red" if failing else "pending" if waiting else "green", failing)
         return self._checks[sha]
+
+    def job_output(self, run):
+        """A check run from GitHub Actions carries no output of its own: what the job printed is in its log, and
+        the check run's id is the job's."""
+        if (run.get("app") or {}).get("slug") != "github-actions" or not run.get("id"):
+            return f"(no output; open the check: {run.get('details_url')})" if run.get("details_url") else ""
+        path = f"repos/{self.repo}/actions/jobs/{run['id']}/logs"
+        log = raw(path)
+        return (log_tail(log) if log else "") or f"(no output; read the job's log: gh api {path})"
 
     # --- issues -------------------------------------------------------------------------
 

@@ -65,7 +65,24 @@ def guard():
         return 0  # not a Rail project
     branch = gitx.git(["rev-parse", "--abbrev-ref", "HEAD"], cwd, check=False).stdout.strip()
     top = gitx.git(["rev-parse", "--show-toplevel"], cwd, check=False).stdout.strip() or project.root
-    reason, decision = rules.deny(command, project.base, branch), "deny"
+    probe = ["rev-parse", "--path-format=absolute", "--git-common-dir", "--abbrev-ref", "HEAD"]
+    ours = gitx.git(probe[:3], project.root, check=False).stdout.strip()
+
+    def locate(directory):
+        """(this project's repository?, the branch checked out there), or None for a directory that doesn't exist:
+        the shell stays where it was when a cd fails."""
+        if not os.path.isdir(directory):
+            return None
+        found = gitx.git(probe, directory, check=False)
+        if found.returncode != 0:
+            # Another repository with no commit yet still answers the first line; no repository answers nothing.
+            return (found.stdout.strip().splitlines()[:1] == [ours], "")
+        common, _, there = found.stdout.strip().partition("\n")
+        return (common == ours, there.strip())
+
+    from .forge import github_repo
+    repo = github_repo(project) if project.remote else None
+    reason, decision = rules.deny(command, project.base, branch, cwd=cwd, locate=locate, repo=repo), "deny"
     if not reason:
         reason, decision = rules.ask(command, cwd, top), "ask"
     if reason:

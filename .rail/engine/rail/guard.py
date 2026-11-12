@@ -62,6 +62,23 @@ def _git(words):
     return (words[i], words[i + 1:]) if i < len(words) else (None, [])
 
 
+def _git_dir(words, here):
+    """The directory a git command runs in: `here`, moved by each -C path. None when it can't be known."""
+    i = 1
+    while here is not None and i < len(words) and words[i].startswith("-"):
+        if words[i] == "-C" and i + 1 < len(words):
+            here = _known(words[i + 1], here)
+        i += 2 if words[i] in ("-C", "-c", "--git-dir", "--work-tree") else 1
+    return here
+
+
+def _known(target, here):
+    """A path as the shell would see it, or None when a variable in it can't be expanded."""
+    if here is None or "$" in os.path.expandvars(target):
+        return None
+    return _resolve(target, here)
+
+
 # Options that take a value: their value is not a flag or a positional argument.
 VALUED = {
     "commit": {"-m", "-F", "-c", "-C", "-t", "--message", "--file", "--template", "--author", "--date"},
@@ -194,10 +211,27 @@ def _journal_writes(words):
     return [t for t in targets if ".rail/journal" in t]
 
 
-def deny(line, base, branch):
-    """Why a command line is denied, or None (plan, section 15)."""
+def _other_repo(words, repo):
+    """Whether a gh command names a repository that isn't this project's: repos/OWNER/NAME/ in an api path, or
+    -R OWNER/NAME. With no known repository of our own, every gh command counts as ours."""
+    if not repo:
+        return False
+    named = [m.group(1) for w in words for m in [re.search(r"(?:^|/)repos/([^/\s]+/[^/\s]+)/", w)] if m]
+    named += [words[i + 1] for i, w in enumerate(words[:-1]) if w in ("-R", "--repo")]
+    named += [w.split("=", 1)[1] for w in words if w.startswith("--repo=")]
+    return bool(named) and all(n.lower().removesuffix(".git") != repo.lower() for n in named)
+
+
+def deny(line, base, branch, cwd=None, locate=None, repo=None):
+    """Why a command line is denied, or None (plan, section 15).
+
+    The git and gh rules protect this project's branches. With `cwd` and `locate`, a command that runs in another
+    repository (after cd, or with git -C) is left alone: locate(directory) answers (ours, branch there), or None
+    when the directory can't be judged. `repo` is this project's OWNER/NAME on GitHub.
+    """
     if _downloads_into_interpreter(line):
         return "piping a download into a shell runs code nobody has read"
+    here = cwd
     for words in commands(line):
         if not words:
             continue
@@ -209,17 +243,27 @@ def deny(line, base, branch):
                     f" ({', '.join(sorted(SAFE_ENV))} are fine)")
         if _journal_writes(words):
             return "only the engine writes .rail/journal/; record a finding's answer with rail answer"
-        if words[0] == "git":
+        if words[0] in ("cd", "pushd"):  # follow cd through the line: cd ../other && git push is another repository
+            here = _known(words[1] if len(words) > 1 and words[1] != "-" else "~", here)
+        elif words[0] == "git":
             sub, args = _git(words)
+            where = _git_dir(words, here)
+            found = locate(where) if locate and where is not None else None
+            ours, at = found if found else (True, branch)
+            if not ours:
+                continue
             if sub == "push":
-                reason = _push(args, base, branch)
+                reason = _push(args, base, at)
                 if reason:
                     return reason
             elif sub == "commit" and ("--no-verify" in args or "n" in _short_flags(args, "commit")):
                 return "git commit --no-verify skips the project's hooks"
-            elif sub == "merge" and branch == base:
+            elif sub == "merge" and at == base:
                 return f"a merge into {base} goes through the engine: rail advance merges a shipped ticket"
         elif words[0] == "gh":
+            found = locate(here) if locate and here is not None else None
+            if (found and not found[0] and not any("repos/" in w for w in words)) or _other_repo(words, repo):
+                continue
             if words[1:3] == ["pr", "merge"]:
                 return "gh pr merge merges outside the engine: rail advance merges a shipped ticket"
             if len(words) > 1 and words[1] == "api" and any("/merge" in w and "/pulls/" in w for w in words[2:]):
