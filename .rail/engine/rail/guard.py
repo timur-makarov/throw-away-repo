@@ -491,9 +491,11 @@ def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
     here = cwd
     repo = repo.lower() if repo else None
     aimed = False  # an exported GIT_DIR or GIT_WORK_TREE points every later git command at a repository
+    gh_repo = []  # and an exported GH_REPO names the repository of every later gh command
     for raw, words, operator, grouped in sequence(line):
-        if words[0] in ("export", "declare", "typeset") and any(w.split("=")[0] in ("GIT_DIR", "GIT_WORK_TREE") for w in words[1:]):
-            aimed = True
+        if words[0] in ("export", "declare", "typeset"):
+            aimed = aimed or any(w.split("=")[0] in ("GIT_DIR", "GIT_WORK_TREE") for w in words[1:])
+            gh_repo += [_repo_name(w.split("=", 1)[1]) for w in words[1:] if w.startswith("GH_REPO=")]
         if _wipes_disk(words):
             return "this command can wipe a disk or a home folder"
         secret = next((w for w in words if _secret(w)), None)
@@ -531,7 +533,7 @@ def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
             elif sub == "merge" and at == base:
                 return f"a merge into {base} goes through the engine: rail advance merges a shipped ticket"
         elif words[0] == "gh":
-            named = _gh_named(raw, words)
+            named = _gh_named(raw, words) or [name for name in gh_repo[-1:] if name]
             if named and repo and repo not in named:
                 continue  # it names only other repositories
             if not named:

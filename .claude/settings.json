@@ -90,7 +90,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"$(find \"$CLAUDE_PROJECT_DIR/.git/rail/cache/pulse/${CLAUDE_CODE_SESSION_ID:-any}\" -mmin -10 2>/dev/null)\" ] || \"$CLAUDE_PROJECT_DIR\"/.rail/bin/rail hook pulse"
+            "command": "[ -n \"$(find \"$HOME/.cache/rail/pulse/${CLAUDE_CODE_SESSION_ID:-any}\" -mmin -10 2>/dev/null)\" ] || \"$CLAUDE_PROJECT_DIR\"/.rail/bin/rail hook pulse"
           }
         ]
       }

@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import time
 
 from .project import Project
 from .util import RailError, cloud
@@ -163,17 +164,17 @@ def stop():
 
 def pulse():
     """PostToolUse, at most every few minutes (the hook's own command checks the stamp first): save the work in
-    flight while the agent works, which also shows other sessions the ticket is alive."""
+    flight while the agent works, which also shows other sessions the ticket is alive. The stamp is the session's,
+    in the home folder: the hook's command finds it there from any project folder, a ticket's worktree included."""
     data = _input()
-    stamp = os.environ.get("CLAUDE_CODE_SESSION_ID") or "any"
-    if MACHINE:
-        path = os.path.join(os.path.expanduser("~"), ".cache", "rail", "pulse", stamp)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
-            f.write("1")
-    else:
-        for project in _projects(data)[2]:
-            project.cache_write("pulse", stamp, "1")
+    folder = os.path.join(os.path.expanduser("~"), ".cache", "rail", "pulse")
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, os.environ.get("CLAUDE_CODE_SESSION_ID") or "any"), "w") as f:
+        f.write("1")
+    for name in os.listdir(folder):  # sessions that ended long ago
+        path = os.path.join(folder, name)
+        if time.time() - os.path.getmtime(path) > 86400:
+            os.remove(path)
     notes = _save("pulse", data)
     if notes:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": "\n".join(notes)}}))
