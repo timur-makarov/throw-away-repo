@@ -25,6 +25,8 @@ BY_PATH = {"git", "gh", "rm"} | SHELLS  # /usr/bin/git push -f is a push too
 # and a cd.
 KEYWORDS = {"{", "!", "if", "then", "elif", "else", "do", "while", "until"}
 SEPARATORS = {";", "&&", "||", "|", "&", "|&"}
+# Words that start a part of a command the shell may skip or repeat.
+STRUCTURE = KEYWORDS | {"fi", "for", "done", "case", "esac", "}", "function", "select"}
 
 
 def _tokens(part):
@@ -525,12 +527,18 @@ def _deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
     gh_exported = False  # and an exported GH_REPO that names this project points every later gh command at it
     certain = _plain(line)  # every line is a command line for sure: a cd on one line holds for the next
     moved = False  # a cd, an eval or a sourced file has been seen
+    items = sequence(line)
+    # A command with a condition, a loop or braces in it may skip any of its parts: no cd in it is believed.
+    structured = any(raw and raw[0] in STRUCTURE for raw, _, _, _ in items)
+    chained = False  # a cd from the middle of an && chain: it holds only for the rest of that chain
     command, previous, before = None, "", ""  # the command at hand, and the operator in front of it
-    for raw, words, operator, grouped in sequence(line):
+    for raw, words, operator, grouped in items:
         first = raw is not command  # the first reading of this command's words
         if first:
             if before == "" and moved and not certain:
                 here = None  # a new line, and the cd before it may have stood in a message: it proves nothing
+            if before != "&&" and chained:
+                here, chained = None, False  # the chain is over; whether its cd ran, nobody knows
             command, previous, before = raw, before, operator
         if words[0] in ("export", "declare", "typeset"):
             # These only ever make the guard stricter. An export that names another repository is not believed:
@@ -549,7 +557,9 @@ def _deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
         if words[0] in ("cd", "pushd", "popd"):
             moved = True
             if first:  # as written only: a cd is believed when it is plain
-                here = _after_cd(words, operator, grouped, here, previous)
+                plain = raw[0] == words[0] and not structured  # no keyword, wrapper or assignment in front of it
+                here = _after_cd(words, operator, grouped, here, previous) if plain else None
+                chained = here is not None and previous == "&&"
         elif words[0] in ("source", ".") or (words[0] == "eval" and re.search(r"[$`]", " ".join(words[1:]))):
             moved = True
             here = None  # a file's commands, or words the guard can't read, may move the shell
