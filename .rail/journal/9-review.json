@@ -342,6 +342,31 @@
           "id": "F17"
         }
       ]
+    },
+    {
+      "run": 12,
+      "role": "review",
+      "patch_id": "98b9b6f6f5ca3c99f36535c63e8cc039ea95b7f2",
+      "head": "467cc5dd82aa",
+      "tier": "HIGH",
+      "at": "2026-11-12T17:48:51Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 4.4102521999999995,
+      "summary": "No blocking or advisory findings; one parked guard gap that main has too. All six Done Contract checks pass, the vendored engine, pack, ruleset, workflow, template and AGENTS.md are identical to the framework at the `.rail/SOURCE` commit, and the framework's 161 tests pass at that commit. About 80 command lines piped through the guard on main's engine and this one differed only as intended, and a save fired mid-rebase commits nothing. The earlier fixes (F1\u2013F9, F14, F16, F17) were checked through the framework's tests, which now include them, and not replayed one by one.",
+      "findings": [
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 278,
+          "claim": "A `cd DIR &&` is followed even when the shell skips it: in `true || cd OTHER_REPO && git push origin main` the shell never runs the cd, so the push to main (or `gh pr merge 5`) runs in this project, but the guard judges it as the other repository's and allows it. Main's engine allows the same lines, so this change did not cause it.",
+          "check": "A guard test that `true || cd OTHER && git push origin main` and `test -d x || cd OTHER && gh pr merge 5` are denied: a cd whose own command follows `||` (or any operator other than `&&`, or none) is not followed.",
+          "evidence": {
+            "command": "Piped each line to `RAIL_CLOUD=0 <engine>/bin/rail hook guard` as a Bash PreToolUse event with cwd set to the ticket's worktree, first with this branch's engine, then main's; OTHER is another git repository on branch main.",
+            "output": "branch:\nallow      <= 'true || cd OTHER && git push origin main'\nallow      <= 'test -d build || cd OTHER && gh pr merge 5'\nmain:\nallow      <= 'true || cd OTHER && git push origin main'\nallow      <= 'test -d build || cd OTHER && gh pr merge 5'"
+          },
+          "id": "F18"
+        }
+      ]
     }
   ]
 }
