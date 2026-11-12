@@ -515,6 +515,31 @@
           "id": "F26"
         }
       ]
+    },
+    {
+      "run": 16,
+      "role": "review",
+      "patch_id": "ad7b205de403d689e7a1d65e05cbd6dbeb5ee94c",
+      "head": "c08f1c1e295f",
+      "tier": "HIGH",
+      "at": "2026-11-12T18:34:21Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.2784395999999996,
+      "summary": "Re-reviewed the whole change. All six Done Contract checks pass; the engine and pack are byte-identical to the framework at the commit in .rail/SOURCE; the guard fixes for F3, F7, F8, F15, F17 and F18 hold on ~55 probe lines. Cross-session scenarios on a fake GitHub (shipped ticket merged from another clone, takeover after 30 minutes, stand-down) behave as documented; one new advisory finding from a save after a red check.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/cli.py",
+          "line": 1130,
+          "claim": "A save with no file changes still pushes a `saved` event as a `[skip ci]` commit when the ticket has been quiet for `save_minutes`. Sequence: a ticket ships, its `rail` check fails more than ten minutes later (state `implementing`, RED_CHECK), and the Stop or pulse hook fires before the agent changes a file: the pull request's head becomes the `[skip ci]` commit, which has no check run and never gets one, so every later `rail next` in any session answers CI_WAIT with owner none, the red check is forgotten, and the ticket is neither resumed nor shown to a person.",
+          "check": "A test: ship a ticket, mark its check failed on the fake GitHub, run `rail hook stop` with the clock past `save_minutes`, and assert `rail next` still answers RED_CHECK (or that the pull request's head did not move).",
+          "evidence": {
+            "command": "Framework harness on the identical engine (github_pair, LOW ticket 1): `rail add`, `rail next`, fix, `rail advance 1`, github.ci('1-fix-add', 'failure'), `rail next`; then `rail hook stop` for the same session with minutes_since() answering 12 more; then `rail next` from session-a, from session-b in the other clone, and from session-b 45 minutes on; then `rail status`.",
+            "output": "a next (CI red) | 1 implementing agent RED_CHECK | A required check failed on PR #1 ... Fix the cause in .claude/worktrees/1, then run: rail advance 1\nhook stop rc 0\nremote head: 1: save [skip ci]\na next | 1 in-ci none CI_WAIT | Ticket 1 shipped; CI runs on PR #1 (https://github.com/acme/app/pull/1).\nb next | 1 in-ci none CI_WAIT | Ticket 1 shipped; CI runs on PR #1 (https://github.com/acme/app/pull/1).\nb next +45min | 1 in-ci none CI_WAIT | Ticket 1 shipped; CI runs on PR #1 (https://github.com/acme/app/pull/1).\nstatus: [('1', 'in-ci', 'none', 'PR #1')]"
+          },
+          "id": "F27"
+        }
+      ]
     }
   ]
 }
