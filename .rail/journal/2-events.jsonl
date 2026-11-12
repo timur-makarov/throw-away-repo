@@ -1,2 +1,13 @@
 {"v":1,"at":"2026-11-12T11:36:16Z","ticket":"2","event":"accepted","by":"engine","via":"lint","tier":"MEDIUM","contract":"ce14faa0aef0","done":"094891b2fe11","scope_paths":["calc/__init__.py","tests/test_calc.py"]}
 {"v":1,"at":"2026-11-12T11:36:23Z","ticket":"2","event":"claimed","session":"64993a07-26e3-5628-bca6-245bef70baf9","takeover":false}
+{"v":1,"at":"2026-11-12T11:37:16Z","ticket":"2","event":"step","step":"ticket-lint","status":"ran","result":"pass","patch_id":"8a3a40d5629110ed43b476ef1a9246de3696dbfb"}
+{"v":1,"at":"2026-11-12T11:37:16Z","ticket":"2","event":"step","step":"assumptions","status":"ran","result":"pass","patch_id":"8a3a40d5629110ed43b476ef1a9246de3696dbfb"}
+{"v":1,"at":"2026-11-12T11:37:16Z","ticket":"2","event":"step","step":"scope","status":"ran","result":"pass","patch_id":"8a3a40d5629110ed43b476ef1a9246de3696dbfb"}
+{"v":1,"at":"2026-11-12T11:37:16Z","ticket":"2","event":"step","step":"rules","status":"ran","result":"pass","patch_id":"8a3a40d5629110ed43b476ef1a9246de3696dbfb"}
+{"v":1,"at":"2026-11-12T11:37:16Z","ticket":"2","event":"step","step":"size","status":"ran","result":"pass","patch_id":"8a3a40d5629110ed43b476ef1a9246de3696dbfb","detail":"size 18/600"}
+{"v":1,"at":"2026-11-12T11:37:16Z","ticket":"2","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":"8a3a40d5629110ed43b476ef1a9246de3696dbfb"}
+{"v":1,"at":"2026-11-12T11:37:16Z","ticket":"2","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"8a3a40d5629110ed43b476ef1a9246de3696dbfb","detail":"exit 0","duration_ms":106}
+{"v":1,"at":"2026-11-12T11:37:16Z","ticket":"2","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"8a3a40d5629110ed43b476ef1a9246de3696dbfb","detail":"python3 -c \"import calc; assert calc.div(6, 3) == 2\"","duration_ms":21}
+{"v":1,"at":"2026-11-12T11:37:16Z","ticket":"2","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"8a3a40d5629110ed43b476ef1a9246de3696dbfb","detail":"python3 -c \"import calc; exec('try:\\n    calc.div(1, 0)\\nexcept calc.CalcError:\\n    pass\\nelse:\\n    raise SystemExit(1)')\"","duration_ms":19}
+{"v":1,"at":"2026-11-12T11:37:16Z","ticket":"2","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"8a3a40d5629110ed43b476ef1a9246de3696dbfb","detail":"python3 -m unittest discover -s tests -q","duration_ms":70}
+{"v":1,"at":"2026-11-12T11:37:16Z","ticket":"2","event":"shipped","patch_id":"8a3a40d5629110ed43b476ef1a9246de3696dbfb","head":"a31c07ee9e11","tier":"MEDIUM","size":18}
