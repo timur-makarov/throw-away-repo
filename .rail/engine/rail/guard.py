@@ -32,6 +32,7 @@ def _tokens(part):
     parentheses are split off, or the operator next to them would be missed."""
     lexer = shlex.shlex(part, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
+    lexer.commenters = ""  # _lines took the comments out; to shlex a # inside a word (a#b, a URL's #fragment) is one too
     try:
         tokens = list(lexer)
     except ValueError:  # an unclosed quote: judge the words we have
@@ -97,6 +98,16 @@ def _scan(text):
             continue
         if quote == "'":
             quote = None if c == "'" else quote
+        elif quote == "$'":  # $'...': a backslash escapes the next character, a quote included
+            if c == "\\" and i + 1 < n:
+                current.append(text[i:i + 2])
+                i += 2
+                continue
+            quote = None if c == "'" else quote
+        elif quote is None and c == "#" and text[i - 1:i] in ("", " ", "\t", "\n", ";", "&", "|", "(", "`"):
+            end = text.find("\n", i)  # a comment: nothing in it is a quote, a here-document or a command
+            i = n if end < 0 else end
+            continue
         elif c == "\\" and i + 1 < n:
             if text[i + 1] != "\n":  # a backslash before a newline joins the two lines
                 current.append(text[i:i + 2])
@@ -105,11 +116,11 @@ def _scan(text):
         elif c == '"':
             quote = None if quote == '"' else '"'
         elif c == "'" and quote is None:
-            quote = "'"
+            quote = "$'" if text[i - 1:i] == "$" else "'"
         elif c == "`" and stack and stack[-1][0] == "`" and quote is None:
             close()
-        elif c == "`" or text.startswith("$(", i):
-            current.append("`" if c == "`" else "$(")
+        elif c == "`" or text.startswith("$(", i) or (quote is None and text.startswith(("<(", ">("), i)):
+            current.append("`" if c == "`" else text[i:i + 2])  # $(...), and <(...) and >(...), run commands too
             stack.append(("`" if c == "`" else ")", quote, parens, len(current)))
             quote, parens = None, 0
             i += len(current[-1])
@@ -121,7 +132,8 @@ def _scan(text):
                 parens -= 1
             else:
                 close()
-        elif quote is None and text.startswith("<<", i) and not text.startswith("<<<", i) and text[i - 1:i] != "<":
+        elif quote is None and text.startswith("<<", i) and not text.startswith("<<<", i) and text[i - 1:i] != "<" \
+                and "((" not in text[row_start:i]:  # in arithmetic, << shifts: no body follows, so nothing is left out
             strip = text.startswith("<<-", i)
             m = re.match(r"[ \t]*(?:'([^'\n]*)'|\"([^\"\n]*)\"|([^\s;&|()<>`]+))", text[i + 2 + strip:])
             if m:
@@ -270,12 +282,14 @@ def _known(target, here):
     return _resolve(target, here or "/")
 
 
-def _after_cd(words, operator, grouped, here):
+def _after_cd(words, operator, grouped, here, before=""):
     """Where the shell is after a cd, pushd or popd. Only `cd DIR &&` is followed: after ;, ||, & or |, inside
     parentheses, or with `cd -`, `popd` or a bare `cd`, the shell may be anywhere, so the answer is None and what
-    follows is judged as this project's."""
+    follows is judged as this project's. So it is when the shell may skip the cd or run it in a child: after
+    `||` (`true || cd DIR && ...`) or in a pipeline."""
     target = words[1] if len(words) == 2 else None
-    if words[0] == "popd" or target is None or target.startswith(("-", "+")) or operator != "&&" or grouped:
+    if words[0] == "popd" or target is None or target.startswith(("-", "+")) or operator != "&&" or grouped \
+            or before in ("||", "|", "|&"):
         return None
     return _known(target, here)
 
@@ -453,7 +467,7 @@ def _gh_named(raw, words):
     URL, and the endpoint of `gh api`. A URL inside an option's value (--body, -f) names nothing: a merge message
     that mentions another repository is still a merge here. Neither do repos/{owner}/{repo} and
     repos/:owner/:repo, which mean the current one."""
-    named = [_repo_name(w.split("=", 1)[1]) for w in raw if w.startswith("GH_REPO=")]
+    named = [_repo_name(w.split("=", 1)[1]) for w in raw[:len(raw) - len(words)] if w.startswith("GH_REPO=")]
     for i, w in enumerate(words):
         if w in ("-R", "--repo") and i + 1 < len(words):
             named.append(_repo_name(words[i + 1]))
@@ -491,11 +505,16 @@ def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
     here = cwd
     repo = repo.lower() if repo else None
     git_exported = False  # an exported GIT_DIR or GIT_WORK_TREE points every later git command at a repository
-    gh_repo = []  # and an exported GH_REPO names the repository of every later gh command
+    gh_exported = False  # and an exported GH_REPO that names this project points every later gh command at it
+    before = ""  # the operator in front of the command at hand
     for raw, words, operator, grouped in sequence(line):
+        before, previous = operator, before
         if words[0] in ("export", "declare", "typeset"):
+            # These only ever make the guard stricter. An export that names another repository is not believed:
+            # it may never reach the command (a pipeline, a child shell, an unset in between).
             git_exported = git_exported or any(w.split("=")[0] in ("GIT_DIR", "GIT_WORK_TREE") for w in words[1:])
-            gh_repo += [_repo_name(w.split("=", 1)[1]) for w in words[1:] if w.startswith("GH_REPO=")]
+            gh_exported = gh_exported or any(w.startswith("GH_REPO=") and repo and _repo_name(w.split("=", 1)[1]) == repo
+                                             for w in words[1:])
         if _wipes_disk(words):
             return "this command can wipe a disk or a home folder"
         secret = next((w for w in words if _secret(w)), None)
@@ -505,7 +524,7 @@ def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
         if _journal_writes(words):
             return "only the engine writes .rail/journal/; record a finding's answer with rail answer"
         if words[0] in ("cd", "pushd", "popd"):
-            here = _after_cd(words, operator, grouped, here)
+            here = _after_cd(words, operator, grouped, here, previous)
         elif words[0] in ("source", ".") or (words[0] == "eval" and re.search(r"[$`]", " ".join(words[1:]))):
             here = None  # a file's commands, or words the guard can't read, may move the shell
         elif words[0] == "git":
@@ -533,7 +552,7 @@ def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
             elif sub == "merge" and at == base:
                 return f"a merge into {base} goes through the engine: rail advance merges a shipped ticket"
         elif words[0] == "gh":
-            named = _gh_named(raw, words) or [name for name in gh_repo[-1:] if name]
+            named = _gh_named(raw, words) + ([repo] if gh_exported else [])
             if named and repo and repo not in named:
                 continue  # it names only other repositories
             if not named:
