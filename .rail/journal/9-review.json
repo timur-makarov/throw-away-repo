@@ -317,6 +317,31 @@
           "id": "F16"
         }
       ]
+    },
+    {
+      "run": 11,
+      "role": "review",
+      "patch_id": "78af0b4ca7400888f7bb8b51acfeb00d15e0d410",
+      "head": "e2403f5acf5c",
+      "tier": "HIGH",
+      "at": "2026-11-12T17:40:02Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.7770686000000007,
+      "summary": "All six Done Contract checks pass, the vendored engine, pack, ruleset, workflow and settings rules are identical to the framework at the commit in .rail/SOURCE, and the framework's 161 tests pass on that engine; the earlier findings F1 to F16 no longer reproduce from the code and the tests that cover them. Probing the guard hook with about 80 command lines and reading the claim, save, hold and git-cache code turned up one new advisory problem: a false deny in the guard.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 522,
+          "claim": "`deny` reuses the flag `aimed` (an exported GIT_DIR points later git commands at an unknown repository) for the result of `locate(there)` on a push target. After a push from another repository to a local folder that is a git repository, `aimed` is a non-empty tuple, so every later git command in the line is judged as this project's: `cd OTHER && git push /path/backup.git main && git push origin main` is denied, though both pushes are another repository's; main's engine allows it.",
+          "check": "A guard test: with OTHER another repository and BARE a local bare repository, `cd OTHER && git push BARE main && git push -f origin topic` is allowed, as `cd OTHER && git push -f origin topic` is.",
+          "evidence": {
+            "command": "Piped each line to `RAIL_CLOUD=0 <engine>/bin/rail hook guard` as a Bash PreToolUse event with cwd set to the ticket's worktree, first with main's engine, then this branch's; S/o1 is another git repository on main, S/o2 a bare repository.",
+            "output": "main:   allow <= cd S/o1 && git push S/o2 main && git push origin main\nbranch: deny (a push to main: only the engine's merge changes it) <= cd S/o1 && git push S/o2 main && git push origin main\nmain:   allow <= cd S/o1 && git push S/o2 main && git push -f origin topic\nbranch: deny (a force push rewrites history others may have) <= cd S/o1 && git push S/o2 main && git push -f origin topic\nbranch: allow <= cd S/o1 && git push origin main"
+          },
+          "id": "F17"
+        }
+      ]
     }
   ]
 }
