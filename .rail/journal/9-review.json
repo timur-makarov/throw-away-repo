@@ -577,6 +577,91 @@
           "id": "F29"
         }
       ]
+    },
+    {
+      "run": 18,
+      "role": "security",
+      "patch_id": "82080e22cda120347ce250448f538fceafd0e47a",
+      "head": "8ca353c0f82a",
+      "tier": "HIGH",
+      "at": "2026-11-12T18:55:26Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.5790494000000006,
+      "summary": "Security seat, re-review. I read the guard, hooks, settings, the save/provision paths and the claim/approval rules, and ran each candidate command through this change's guard, origin/main's guard and real bash with stub git/gh (plus the real `rail hook guard` for both engines, and a 40,000-command fuzz for crashes that would fail open: none). F10\u2013F12 and F19\u2013F25 hold as fixed, but four new commands that main's guard denies now pass and still run in bash; two pre-existing gaps are parked.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 146,
+          "claim": "`sequence` treats an empty-string token as a command separator (`token == \"\"`), so an empty quoted argument cuts a command in two and the flags after it are never judged. `git push -o \"\" --force origin 9-x` and `git commit --allow-empty-message -m \"\" --no-verify` pass, though bash runs them whole; main's engine denies both.",
+          "check": "A guard test where each denied git command gets an empty-string value (`-o \"\"`, `-m \"\"`) before the denied flag, added to the differential bash matrix.",
+          "evidence": {
+            "command": "printf '%s' '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push -o \\\"\\\" --force origin 9-x\"},\"cwd\":\"'\"$PWD\"'\"}' | RAIL_CLOUD=0 .rail/bin/rail hook guard   (each case with this change's engine and origin/main's, then bash -c with stub git)",
+            "output": "NEW\n  pass 'git push -o \"\" --force origin 9-x'\n  pass 'git commit --allow-empty-message -m \"\" --no-verify'\n  deny 'git push -o x --force origin 9-x'\nOLD\n  deny 'git push -o \"\" --force origin 9-x'\n  deny 'git commit --allow-empty-message -m \"\" --no-verify'\nBASH\n  RAN: git push -o  --force origin 9-x\n  RAN: git commit --allow-empty-message -m  --no-verify"
+          },
+          "id": "F30"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 36,
+          "claim": "With `lexer.commenters = \"\"` the words of a trailing comment become arguments of the command, so on the base branch `git push origin # publish it` (or `git push # publish`, `git push -u origin  # set upstream`) is read as a push with refspecs `#`, `publish`, `it` and the 'push from main' rule no longer fires. Bash runs a bare `git push origin` from main; main's engine denies it.",
+          "check": "A guard test, with the branch equal to the base, for `git push`, `git push origin` and `git push -u origin` each followed by ` # some words`; and the same lines in the bash differential test run from a checkout on the base branch.",
+          "evidence": {
+            "command": "same hook comparison with \"cwd\":\"/home/user/throw-away-repo\" (checked out on main)",
+            "output": "NEW\n  pass 'git push origin # publish it'\n  deny 'git push origin'\nOLD\n  deny 'git push origin # publish it'\nBASH (cwd on main)\n  RAN: git push origin\n  RAN: git push        <- 'git push # publish'\n  RAN: git push -u origin   <- 'git push -u origin  # set upstream'"
+          },
+          "id": "F31"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 423,
+          "claim": "A `GH_REPO=` assignment in front of `gh` is believed even when it doesn't decide the repository: `GH_REPO=other/repo GH_REPO= gh pr merge 5` (the later empty assignment wins, so gh uses this checkout's repository) and `GH_REPO=other/repo gh pr merge --squash https://github.com/timur-makarov/throw-away-repo/pull/5` (the URL after a flag isn't counted as naming a repository, yet gh takes the repository from it) both pass. Main's engine denies both; this is F20's class, and with a merged unshipped pull request counting as approval it lets an agent approve its own contract.",
+          "check": "Guard tests: a merge with two `GH_REPO=` assignments where the last is empty or names this project, and a merge whose pull request URL of this project follows a flag while `GH_REPO=`/`-R` names another repository; all must be denied.",
+          "evidence": {
+            "command": "same hook comparison, this change's engine vs origin/main's; bash -c with stub gh printing $GH_REPO",
+            "output": "NEW\n  pass 'GH_REPO=other/repo GH_REPO= gh pr merge 5'\n  pass 'GH_REPO=other/repo gh pr merge --squash https://github.com/timur-makarov/throw-away-repo/pull/5'\nOLD\n  deny (both)\nBASH\n  RAN: gh pr merge 5 [GH_REPO= ...]\n  RAN: gh pr merge --squash https://github.com/timur-makarov/throw-away-repo/pull/5 [GH_REPO=other/repo ...]"
+          },
+          "id": "F32"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 437,
+          "claim": "The `gh api` endpoint is taken as the first word that isn't an option or a listed option's value, but bundled short flags aren't in `GH_API_VALUED`: in `gh api -if repos/other/x/k=v -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge` the guard takes the `-f` field value as the endpoint, concludes the command names only `other/x`, and lets the merge of this project's pull request pass. Main's engine denies it, because it looked at every word; this is F11's case again.",
+          "check": "A guard test for `gh api` merges of this repository with a decoy `repos/OTHER/NAME/` in the value of a bundled short option (`-if`, `-iH`, `-iF`); or judge a `gh api` merge as ours whenever any word names this repository's `repos/OWNER/NAME/`.",
+          "evidence": {
+            "command": "same hook comparison, this change's engine vs origin/main's",
+            "output": "NEW\n  pass 'gh api -if repos/other/x/k=v -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge'\n  deny 'gh api -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge'\nOLD\n  deny 'gh api -if repos/other/x/k=v -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge'"
+          },
+          "id": "F33"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 298,
+          "claim": "On the base branch a redirection's words count as refspecs, so `git push origin 2>&1 | tail -3` from a checkout on main passes and pushes main. Main's engine passes it too.",
+          "check": "Drop redirection tokens and their targets before counting a push's positional arguments; test `git push origin 2>&1` with the branch equal to the base.",
+          "evidence": {
+            "command": "python3 h.py (guard.deny with cwd=/home/user/throw-away-repo for both engines, then bash with stub git)",
+            "output": "new=pass old=pass bash=['RAN: git push origin [... pwd=/home/user/throw-away-repo]'] 'git push origin 2>&1 | tail -3'"
+          },
+          "id": "F34"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 61,
+          "claim": "A line whose quotes balance only because two multi-line strings meet on it is read as one quoted word: `echo \"a` / `b\" ; git push -f origin x ; echo \"c` / `d\"` passes, and bash runs the push. A here-string `<<<'EOF'` is also taken for a quoted here-document, so `$(git push -f origin x)` on the following lines isn't read. Main's engine passes both as well.",
+          "check": "Add both shapes to the bash differential matrix in tests/test_guards.py.",
+          "evidence": {
+            "command": "python3 h.py (same three-way comparison)",
+            "output": "new=pass old=pass bash=['RAN: git push -f origin x'] 'echo \"a\\nb\" ; git push -f origin x ; echo \"c\\nd\"'\nnew=pass old=pass bash=['RAN: git push -f origin x'] \"cat <<<'EOF'\\necho $(git push -f origin x)\\nEOF\""
+          },
+          "id": "F35"
+        }
+      ]
     }
   ]
 }
