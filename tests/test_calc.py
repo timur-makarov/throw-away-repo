@@ -14,6 +14,14 @@ class CalcTest(unittest.TestCase):
         self.assertEqual(calc.sub(5, 3), 2)
         self.assertEqual(calc.sub(3, 5), -2)
 
+    def test_div(self):
+        self.assertEqual(calc.div(6, 3), 2)
+        self.assertEqual(calc.div(1, 4), 0.25)
+
+    def test_div_by_zero_is_a_calc_error(self):
+        with self.assertRaises(calc.CalcError):
+            calc.div(1, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
