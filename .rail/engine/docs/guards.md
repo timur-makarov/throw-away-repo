@@ -40,7 +40,8 @@ auto mode included, which is why `sudo` and the like are asked by the hook and n
 
 **It protects this project's branches, not every repository.** After `cd DIR &&`, or with `git -C DIR`, a
 command in another repository is left alone. Whatever the guard can't follow (`cd -`, `popd`, a subshell, a
-`cd` before `;` or `||` or after `||`, `--git-dir`, a variable other than `$HOME` and `$PWD`) is judged as
+`cd` before `;` or `||` or after `||`, `--git-dir`, a variable other than `$HOME` and `$PWD`, or those two
+once the command sets them itself) is judged as
 this project's, and so is what follows a sourced file or an `eval` of words the guard can't read. A `cd` is
 believed only as a plain command in a flat chain: not behind a keyword or in braces (`if ...; then cd DIR`,
 `{ cd DIR; }`), where the shell may skip it, and one from the middle of an `&&` chain holds until that chain

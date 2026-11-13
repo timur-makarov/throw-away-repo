@@ -493,7 +493,8 @@ def cmd_accept(project, args):
         events = [accepted_event(nn, f.ticket, f.tier, "person", "accept", note)]
     elif f.amend_pending:
         events = [accepted_event(nn, f.ticket, f.tier, "person", "accept", note)]
-    elif f.state in OPEN and first_match(f)[1] == "human":
+    elif f.state in OPEN and (first_match(f)[1] == "human" or answers_wait(f)):
+        # With a rail:go already on the pull request the table reads that label first: it is the same answer.
         events = [event(nn, "continued", via="accept", **({"note": note} if note else {}))]
     else:
         raise RailError(f"ticket {nn} is {f.state}, and nothing waits for a person", code="NOTHING_TO_ACCEPT")

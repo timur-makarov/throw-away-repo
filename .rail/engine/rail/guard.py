@@ -257,16 +257,31 @@ def _git_dir(words, here):
     return here
 
 
+CHANGED = set()  # HOME and PWD, when the command being judged may change them (set by _deny and _ask)
+
+
+def _changed(text):
+    """Which of HOME and PWD a command may change: those it names other than to read them ($HOME, ${PWD}). An
+    assignment, an export, an unset or a read makes their value the command's own business."""
+    rest = re.sub(r"\$\{?(?:HOME|PWD)\}?", "", text)
+    return {name for name in ("HOME", "PWD") if re.search(rf"\b{name}\b", rest)}
+
+
 def _expand(target, here):
     """A word with ~, $HOME and $PWD filled in as the shell would at this point of the command; `here` is where
     the shell stands, None when that isn't known. Every other variable stays as written: the command itself may
-    have set it, and the shell moves $OLDPWD with each cd, so the hook's own environment says nothing about them."""
+    have set it, and the shell moves $OLDPWD with each cd, so the hook's own environment says nothing about them.
+    So do HOME and PWD when the command changes them: `PWD=/here && cd $PWD` goes where the command says."""
+    if "HOME" in CHANGED and target.startswith("~"):
+        target = "$HOME" + target[1:]  # left as a variable: nobody knows where ~ is now
+
     def value(match):
         name = match.group(1) or match.group(2)
-        if name == "HOME":
+        if name == "HOME" and "HOME" not in CHANGED:
             return os.path.expanduser("~")
-        return here if name == "PWD" and here else match.group(0)
-    return os.path.expanduser(re.sub(r"\$(?:(\w+)|\{(\w+)\})", value, target))
+        return here if name == "PWD" and here and "PWD" not in CHANGED else match.group(0)
+    filled = re.sub(r"\$(?:(\w+)|\{(\w+)\})", value, target)
+    return filled if "HOME" in CHANGED else os.path.expanduser(filled)
 
 
 def _known(target, here):
@@ -521,6 +536,8 @@ def _deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
     """
     if not cloud and _downloads_into_interpreter(line):
         return "piping a download into a shell runs code nobody has read"
+    CHANGED.clear()
+    CHANGED.update(_changed(line))
     here = cwd
     repo = repo.lower() if repo else None
     git_exported = False  # an exported GIT_DIR or GIT_WORK_TREE points every later git command at a repository
@@ -631,6 +648,8 @@ def _ask(line, cwd, top, cloud=False):
     `rail answer --owner` records a person's decision, so it asks everywhere. The rest protects a person's own
     machine and work: in a cloud session the VM is disposable and an ask would only stop an unattended run.
     """
+    CHANGED.clear()
+    CHANGED.update(_changed(line))
     for words in commands(line):
         if words and os.path.basename(words[0]) == "rail" and "answer" in words[1:3] and "--owner" in words:
             return "rail answer --owner records the owner's decision on a finding: that is a person's to make"
