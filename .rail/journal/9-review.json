@@ -913,6 +913,18 @@
         }
       ],
       "disputes": "F42"
+    },
+    {
+      "run": 28,
+      "role": "review",
+      "patch_id": "41a990ddb1c770a72b8a85265a47cb8ccf1e7f02",
+      "head": "ae4f1c9fef0b",
+      "tier": "HIGH",
+      "at": "2026-11-13T07:18:38Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.6904161999999996,
+      "summary": "Re-reviewed the whole change and found nothing new; no earlier finding still stands, and the one the author declined (F28) is now described as intended in docs/loop.md. All six Done Contract checks pass; the engine, pack, ruleset, workflow and ticket template are byte-identical to the framework at the commit in .rail/SOURCE (which is framework main), and the framework's own 168 tests pass on it. The only change since the last clean review (a command that sets PWD or HOME itself, and rail accept with rail:go already on the pull request) was probed through the guard hook in local and cloud mode, along with the PostToolUse throttle, with no wrong result.",
+      "findings": []
     }
   ]
 }

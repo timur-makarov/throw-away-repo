@@ -377,3 +377,4 @@
 {"v":1,"at":"2026-11-13T07:12:29Z","ticket":"9","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"41a990ddb1c770a72b8a85265a47cb8ccf1e7f02","detail":"test -f .rail/ruleset.json && ! grep -q \"Bash(sudo\" .claude/settings.json","duration_ms":159}
 {"v":1,"at":"2026-11-13T07:12:29Z","ticket":"9","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"41a990ddb1c770a72b8a85265a47cb8ccf1e7f02","detail":"python3 -m unittest discover -s tests -q","duration_ms":56}
 {"v":1,"at":"2026-11-13T07:12:29Z","ticket":"9","event":"shipped","patch_id":"41a990ddb1c770a72b8a85265a47cb8ccf1e7f02","head":"899c524803e7","tier":"HIGH","size":2509}
+{"v":1,"at":"2026-11-13T07:18:38Z","ticket":"9","event":"step","step":"review","status":"ran","result":"pass","patch_id":"41a990ddb1c770a72b8a85265a47cb8ccf1e7f02","detail":"run 28: 0 blocking, 0 findings","duration_ms":365732,"cost_usd":2.6904161999999996}
