@@ -6,7 +6,7 @@ consult); `next` makes the move, derives the facts again, and reads the table on
 
 from .project import ticket_path
 
-TRANSITIONS = {"ACCEPT_AUTO", "CLAIM", "RESUME", "CONSULT", "GO", "REBASE_BEHIND"}
+TRANSITIONS = {"ACCEPT_AUTO", "CLAIM", "RESUME", "CONSULT", "GO", "REBASE_BEHIND", "CONTRACT_MERGED"}
 MERGE_PATIENCE = 600  # seconds a requested merge may take before a person looks
 OPEN = ("implementing", "reviewing", "in-ci", "merge-ready")
 
@@ -77,7 +77,7 @@ def _implement(f):
         "Before you ship, write \"## Look at\" in the ticket: what a reader of this change should check.",
         f"When the Done Contract holds, run: rail advance {f.id}",
     ]
-    return "\n".join(lines) + _findings(f, "Open review findings:") + _note(f)
+    return "\n".join(lines) + _save_note(f) + _findings(f, "Open review findings:") + _note(f)
 
 
 def _assumptions(f):
@@ -107,11 +107,37 @@ def _capped(f):
     steps = _join(f.capped)
     return (f"Ticket {f.id} used its retry budget at '{steps}' ({f.project.config['retry']['budget']} attempts, then the"
             f" attempt after consult). A person looks at the journal and the branch {f.t.name}, then continues it:"
-            f" rail accept {f.id} \"what to do differently\". That gives a fresh budget.")
+            f" rail accept {f.id} \"what to do differently\". That gives a fresh budget." + _go(f))
 
 
 def _pr(f):
     return f"PR #{f.pr['number']} ({f.pr['html_url']})" if f.pr else "its pull request"
+
+
+def _go(f):
+    """How a person continues a wait from GitHub, where a cloud session leaves them: the label on the pull request."""
+    return (f" On GitHub: add the label rail:go to {_pr(f)}; a comment there reaches the agent as your note."
+            if f.pr_open else "")
+
+
+def _held(f):
+    where = f" ({f.claimed['session_url']})" if f.claimed and f.claimed.get("session_url") else ""
+    quiet, limit = f.quiet_minutes, f.project.config["claim"]["stale_minutes"]
+    if f.taken_from_me:
+        return (f"Ticket {f.id} was taken over by another session{where}. Stop work on it here: its branch has moved on"
+                f" from this session's copy, and whatever isn't saved stays in {f.cwd} for you to look at. Take other"
+                f" work with rail next.")
+    return (f"Ticket {f.id} is another session's work{where}, quiet for {quiet if quiet is not None else '?'} min."
+            f" After {limit} min with no move, rail next resumes it here. To take it over now: rail next --ticket {f.id}")
+
+
+def _save_note(f):
+    """Where no hook saves for the session, the agent does: unsaved work is lost with the machine, and a ticket that
+    shows no life is taken to be abandoned."""
+    if f.project.session and f.project.cache_read("hooks", f.project.session):
+        return ""
+    return (f"\nNothing saves your work for you in this session. Run rail save {f.id} every ten minutes or so of work"
+            " and before you stop: it pushes what you have, and shows other sessions this ticket is alive.")
 
 
 def _red_check(f):
@@ -152,11 +178,15 @@ ROWS = [
     ("GO",                 "agent", "script",      lambda f: "rail:go" in f.labels and f.state not in ("merged", "dropped")
                                                    and not (f.state == "new" and f.lint_errors),
      lambda f: f"rail next --ticket {f.id}"),
+    ("CONTRACT_MERGED",    "agent", "script",      lambda f: f.state == "new" and f.contract_merged,
+     lambda f: f"rail next --ticket {f.id}"),
     ("ACCEPT_AUTO",        "agent", "script",      lambda f: f.state == "new" and f.auto,
      lambda f: f"rail next --ticket {f.id}"),
     ("APPROVE_CONTRACT",   "human", "human_wait",  lambda f: f.state == "new",
      lambda f: f"Approve the contract of ticket {f.id} ({f.tier}): read {ticket_path(f.id)} on branch {f.t.name},"
-               f" then run: rail accept {f.id}. To change it, say what to change. To reject it, run: rail drop {f.id}"),
+               f" then run: rail accept {f.id}. To change it, say what to change. To reject it, run: rail drop {f.id}"
+               + (f" On GitHub: {_pr(f)} shows the contract; the label rail:go approves it, a comment asks for a"
+                  f" change, and closing it rejects it." if f.pr_open else "")),
     ("AFTER_DROPPED",      "human", "human_wait",  lambda f: f.state == "accepted" and f.after_dropped,
      lambda f: f"Ticket {f.id} comes after ticket {_join(f.after_dropped)}, which was dropped. A person decides:"
                f" remove it from `after` (rail amend {f.id} --file FILE), or drop ticket {f.id}."),
@@ -166,18 +196,14 @@ ROWS = [
      lambda f: f"Ticket {f.id} can't be claimed while ticket {_join(f.overlaps)} changes the same paths."),
     ("CLAIM",              "agent", "script",      lambda f: f.state == "accepted",
      lambda f: f"rail next --ticket {f.id}"),
-    ("CLAIMED_ELSEWHERE",  "none",  "rest",        lambda f: f.claimed_elsewhere and not f.explicit,
-     lambda f: f"Ticket {f.id} is claimed by another session. To take it over: rail next --ticket {f.id}"),
-    ("RESUME",             "agent", "script",      lambda f: f.claimed_elsewhere or not f.worktree,
-     lambda f: f"rail next --ticket {f.id}"),
     ("APPROVE_AMEND",      "human", "human_wait",  lambda f: f.amend_pending,
      lambda f: f"The Done Contract of ticket {f.id} changed (rail amend). Read {ticket_path(f.id)} on branch {f.t.name},"
-               f" then approve it: rail accept {f.id}"),
+               f" then approve it: rail accept {f.id}." + _go(f)),
     ("RETRY_CAP",          "human", "human_wait",  lambda f: f.state in OPEN and f.capped,
      _capped),
     ("STUCK_REVIEW",       "human", "human_wait",  lambda f: f.state == "reviewing" and f.stuck_review,
      lambda f: f"The review of ticket {f.id} timed out twice (timeout_secs). A person looks at why, for example a command"
-               f" that waits for input, then continues it: rail accept {f.id}"),
+               f" that waits for input, then continues it: rail accept {f.id}." + _go(f)),
     ("FINDING_UPHELD",     "human", "human_wait",  lambda f: f.ledger.disputed_again(),
      lambda f: f"The refuter upheld {_join(f.ledger.disputed_again())} on ticket {f.id}, and the agent still disputes it."
                f" A person decides: rail answer {f.id} F1 declined \"why\" --owner, or rail accept {f.id} \"how to fix it\"."),
@@ -185,6 +211,12 @@ ROWS = [
                                                    and not (f.state == "merge-ready" and not f.auto),
      lambda f: f"A person holds ticket {f.id} with the label rail:needs-you on {_pr(f)}. They continue it with the"
                f" label rail:go, or: rail accept {f.id} \"note\""),
+    # A claim protects work in flight. The waits above show from any session, and a shipped ticket (in CI, ready to
+    # merge) needs no claim: the rows below move it from whichever session looks.
+    ("CLAIMED_ELSEWHERE",  "none",  "rest",        lambda f: f.held and not f.explicit,
+     _held),
+    ("RESUME",             "agent", "script",      lambda f: f.in_flight and (f.claimed_elsewhere or not f.worktree),
+     lambda f: f"rail next --ticket {f.id}"),
     ("CONSULT",            "agent", "script",      lambda f: f.state in OPEN and f.consult_due,
      lambda f: f"rail next --ticket {f.id}"),
     ("SWEEP_RUN",          "agent", "script",      lambda f: f.state == "implementing" and f.sweep and not f.sweep_done,
@@ -224,7 +256,7 @@ ROWS = [
                f"Ticket {f.id} shipped; its branch isn't pushed to {_pr(f)} yet: run rail advance {f.id}."),
     ("MERGE_FAILED",       "human", "human_wait",  lambda f: f.state == "merge-ready" and _merge_stale(f),
      lambda f: f"The merge of {_pr(f)} was requested and hasn't landed. A person looks at the pull request, then"
-               f" continues: rail accept {f.id}"),
+               f" continues: rail accept {f.id}." + _go(f)),
     ("MERGE_REQUESTED",    "none",  "rest",        lambda f: f.state == "merge-ready" and _merge_requested(f),
      lambda f: f"The merge of {_pr(f)} is requested; rail next sees it on the base branch once GitHub lands it."),
     ("MERGE",              "agent", "script",      lambda f: f.state == "merge-ready" and (f.auto or f.merge_approved)

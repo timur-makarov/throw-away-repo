@@ -7,7 +7,9 @@ if sys.version_info < (3, 11):
     sys.stderr.write("rail needs Python 3.11 or newer (found %d.%d). On macOS: brew install python\n" % sys.version_info[:2])
     sys.exit(2)
 
-sys.dont_write_bytecode = True  # no __pycache__ under .rail/engine to commit by mistake
+# Compiled engine files go to the home folder: no __pycache__ under .rail/engine to commit by mistake, and the
+# engine isn't compiled again on every call.
+sys.pycache_prefix = os.path.join(os.path.expanduser("~"), ".cache", "rail", "pycache")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "engine"))
 from rail.cli import main  # noqa: E402
 

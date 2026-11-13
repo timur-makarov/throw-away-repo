@@ -1,4 +1,4 @@
-"""The steps the engine runs: claim and setup, ship (plan, section 7), the local merge and the PR description."""
+"""The steps the engine runs: claim and setup, ship, the local merge and the PR description."""
 
 import os
 import shutil
@@ -8,7 +8,7 @@ from . import doclint, gitx, rules
 from .project import event, events_path, ticket_path
 from .state import raised_tier
 from .ticket import Ticket, lint, rank
-from .util import match_any, run_shell, tail
+from .util import match_any, minutes_since, run_shell, tail
 
 class Run:
     """The receipt of one command: the steps it ran, their events, and the first failure."""
@@ -54,8 +54,19 @@ class Run:
         return self.failure is None
 
 
+def keep_alive(project, t):
+    """Before a long command inside advance: when the ticket's last pushed event is older than claim.save_minutes,
+    push one. Another session reads a ticket with no event for claim.stale_minutes as abandoned."""
+    if not getattr(t, "branch", None) or not getattr(t, "events", None):
+        return
+    quiet = minutes_since(t.events[-1].get("at"))
+    if quiet is not None and quiet >= project.config["claim"]["save_minutes"]:
+        project.append_events(t, [event(t.id, "saved", via="advance", files=0)], "still at work [skip ci]")
+
+
 def run_command(project, cwd, nn, step, command, run, patch_id=None, label=None):
     """Run one configured command in `cwd` and record it."""
+    keep_alive(project, run.t)
     code, output, ms = run_shell(command, cwd, {"RAIL_TICKET": nn, "RAIL_BASE": project.base_ref},
                                  project.config["commands"]["timeout_secs"])
     status = "timeout" if code is None else f"exit {code}"
@@ -115,7 +126,7 @@ def check(project, nn, ticket, ref, cwd, tier, run, patch_id, accepted=None):
     """
     errors = lint(ticket, expect_id=nn)
     if accepted and not errors:
-        # The contract and tier freeze at acceptance (plan, section 5): only `rail amend` changes them.
+        # The contract and tier freeze at acceptance: only `rail amend` changes them.
         if ticket.contract_hash() != accepted.get("contract"):
             errors.append(f"the contract (Done Contract and scope_paths) differs from the accepted one; change it with"
                           f" rail amend {nn}")
@@ -130,7 +141,7 @@ def check(project, nn, ticket, ref, cwd, tier, run, patch_id, accepted=None):
         return _stop(run, "assumptions")
 
     changed = project.changed_files(ref)
-    outside = [p for p in changed if not match_any(ticket.scope, p)]
+    outside = [p for p in changed + project.other_tickets(ref, nn) if not match_any(ticket.scope, p)]
     if not run.record("scope", not outside, patch_id, f"outside scope: {', '.join(outside)}" if outside else None,
                       output=f"These files are outside scope_paths ({', '.join(ticket.scope)}):\n" + "\n".join(outside)):
         return _stop(run, "scope")
@@ -234,7 +245,7 @@ def ship(project, f, run):
     text = gitx.read_blobs([f"{ref}:{ticket_path(t.id)}"], project.root)[f"{ref}:{ticket_path(t.id)}"]
     tier = check(project, t.id, Ticket(text or ""), ref, wt, f.tier, run, patch_id, accepted=f.accepted)
     if tier is None and run.failure[0] == "verify":
-        # A red base spends no budget (plan, section 7): two tickets that each pass can break main together.
+        # A red base spends no budget: two tickets that each pass can break main together.
         red = base_fails_verify(project)
         if red:
             run.events[-1]["counted"] = False
@@ -260,7 +271,7 @@ def ship_failed_brief(t, run):
 
 
 def describe(project, t, ticket, tier):
-    """The PR title and description (plan, section 9). Locally they are the squash commit's subject and body."""
+    """The PR title and description. Locally they are the squash commit's subject and body."""
     title = ticket.title.strip()
     subject = f"{t.id}: {title[:1].lower()}{title[1:]}"
     run_events = []
@@ -284,7 +295,9 @@ def describe(project, t, ticket, tier):
             own = [fid for fid, x in ledger.findings.items() if x.get("role") == role]
             open_ = [fid for fid in own if ledger.outcome(fid) == "open"]
             said = (f"{len(own)} findings, " + ("all answered" if not open_ else f"{len(open_)} open")) if own else "no findings"
-            rows.append(f"| {role} | ran, {len(ledger.runs(role))} runs, {said} |")
+            models = sorted({r["model"] for r in ledger.runs(role) if r.get("model")})
+            by = f" by {', '.join(models)}" if models else ""
+            rows.append(f"| {role} | ran, {len(ledger.runs(role))} runs{by}, {said} |")
     changed = project.changed_files(t.ref)
     lockfiles = [p for p in changed if os.path.basename(p) in rules.LOCKFILES]
     migrations = "No migrations." if not ticket.get("reversibility") else (
@@ -303,11 +316,14 @@ def describe(project, t, ticket, tier):
         body.append(f"Closes #{external.split('#', 1)[1]}")
     if external.startswith("sweep#"):
         body.append(f"Sweep: since {external.split('#', 1)[1]}")  # where the next sweep starts
+    sessions = [e["session_url"] for e in t.events if e.get("event") == "claimed" and e.get("session_url")]
+    if sessions:
+        body.append(f"Claude-Session: {sessions[-1]}")  # the cloud session that worked it, for a person to open
     return subject, "\n".join(body)
 
 
 def merge_local(project, f, run):
-    """Squash-merge a shipped ticket into the base branch, with no remote (plan, section 6: Offline)."""
+    """Squash-merge a shipped ticket into the base branch, with no remote."""
     t = f.t
     base_ref = f"refs/heads/{project.base}"
     base_tip = gitx.rev(base_ref, project.root)

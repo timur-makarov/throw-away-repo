@@ -5,20 +5,32 @@ Code cloud session, where `gh pr` and `gh issue` (GraphQL) don't work.
 
 ## One-time setup
 
-`rail init` creates the labels `rail`, `rail:go` and `rail:needs-you`. Then, in the repository's settings:
+`rail init` creates the labels `rail`, `rail:go` and `rail:needs-you`, and writes `.rail/ruleset.json`.
+The rest is yours, in the repository's settings; a cloud session can't change them:
 
-- Make `rail` a required check on the base branch (a ruleset or branch protection).
-- Allow squash merging only, with "Pull request title and description" as the default message, so a
-  person's merge puts the same `Ticket:` trailer on the base branch as the engine's.
-- Turn on "Automatically delete head branches".
+- **Settings > Rules > Rulesets > New ruleset > Import a ruleset:** choose `.rail/ruleset.json`, downloaded
+  to your device first (the framework's `seed/ruleset.json` is the same file). It makes
+  `rail` a required check on the base branch, requires a pull request and an up-to-date branch, allows
+  squash merges only, and blocks force pushes and deletion. To make it by hand: a branch ruleset, active,
+  on the default branch, with "Require a pull request before merging" (0 approvals, squash only) and
+  "Require status checks to pass" (`rail`, with "Require branches to be up to date").
+- **Settings > General > Pull Requests:** "Pull request title and description" as the default squash
+  message, so a person's merge puts the same `Ticket:` trailer on the base branch as the engine's. The
+  ruleset already allows squash merges only on the base branch.
+- **The same page:** turn on "Automatically delete head branches".
 - Turn on Dependabot or Renovate.
 
-`rail doctor` checks the required check, the squash setting and the labels.
+`rail doctor` checks the required check, the squash setting, branch deletion and the labels, with a link to
+each page.
 
 ## How tickets use pull requests
 
 - A ticket outside `auto_tiers` opens a contract pull request at `add`, titled `NN: [contract] ...`. Approve
-  it with the label `rail:go`, change it by commenting, reject it by closing it.
+  it with the label `rail:go`, change it by commenting, reject it by closing it. Don't merge it: it holds
+  only the contract, and with the ruleset GitHub refuses, because its `rail` check is red. Without the
+  ruleset a merge goes through, and Rail takes it as the approval: the work gets a new pull request. Only
+  the merge of the ticket's own pull request counts. A ticket file that reaches the base branch any other
+  way, such as inside another ticket's merge, approves nothing.
 - A ticket in `auto_tiers` opens its pull request at claim.
 - No pull request is a draft. The `rail` check stays red with `not shipped yet` until the ticket ships, so
   nothing merges early by mistake.

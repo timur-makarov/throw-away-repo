@@ -1,0 +1,1046 @@
+{
+  "schema": "review/v1",
+  "ticket": "9",
+  "runs": [
+    {
+      "run": 1,
+      "role": "review",
+      "patch_id": "4c9ee8d873de287572f9ffeb4bc087e0b11d9998",
+      "head": "bfb4ac7653f6",
+      "tier": "HIGH",
+      "at": "2026-11-12T15:29:17Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.2410630000000005,
+      "summary": "Ran all six Done Contract checks (pass), diffed the vendored engine, pack, ruleset, workflow, template and AGENTS.md against the framework at the SOURCE commit (identical; settings rules match the seed; the framework's own 143 tests pass), and probed the guard by hand. Then exercised claim, save, the stop and pulse hooks, takeover and review in a scratch project with a local remote: the claim rules behave as described, but a review run that starts ten minutes after the ticket's last event leaves the branch diverged from the remote, and the new engine revives ticket 8.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/review.py",
+          "line": 275,
+          "claim": "`run` reads `head` before `keep_alive`, which commits and pushes a `saved` event when the ticket's last event is at least `save_minutes` old; after the reviewer, `git reset --hard head` moves the branch back behind that pushed commit. The review run is then committed on the old head and its push is refused as a non-fast-forward, so the run never reaches the remote and every later push of the branch is refused too (sequence: a ticket in `reviewing`, `rail advance` more than ten minutes after its last event, such as a session coming back from a pause or after an invalid-output review).",
+          "check": "A test that runs `rail advance` on a ticket in `reviewing` whose last event is older than `[claim] save_minutes`, and asserts that the local branch and the remote branch have the same tip afterwards.",
+          "evidence": {
+            "command": "Scratch clone with a bare remote, MEDIUM ticket 2 shipped, first review run invalid (state reviewing). Then `python3 later.py advance 2` (rail with minutes_since() answering 11 more) and `git rev-parse --short` / `git log --oneline -3` of the local and remote branch; then a plain `rail advance 2`.",
+            "output": "=== heads before (local, remote)\n829bd19\n829bd19\n=== advance, eleven minutes later\n  review: ran, pass (run 1: 0 blocking, 0 findings)\n=== heads after (local, remote)\n5c27963\nb89f942\n=== local\n5c27963 2: review\n829bd19 2: review failed\n=== remote\nb89f942 2: still at work [skip ci]\n829bd19 2: review failed\n=== advance again: heads unchanged\n5c27963\nb89f942"
+          },
+          "id": "F1"
+        },
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/state.py",
+          "line": 198,
+          "claim": "With this engine ticket 8 is no longer `merged`: its contract pull request #11 was merged with no ship, so it becomes `new` with owner `agent` (CONTRACT_MERGED). After ticket 9 merges, the next `rail next` records the merge as the owner's approval of ticket 8 and hands an agent the same contract ticket 9 just delivered; nothing in the change drops ticket 8 or says a person must.",
+          "check": "After the change, `rail status --json` lists no ticket with owner `agent` whose Done Contract equals that of a merged ticket; here, ticket 8 is dropped before or with the merge.",
+          "evidence": {
+            "command": ".rail/bin/rail status",
+            "output": "7       merged        none   LOW     3h    PR #12\n8       new           agent  HIGH          PR #11\n9       implementing  none   HIGH    0m    another session's work, quiet 0 min"
+          },
+          "id": "F2"
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "role": "review",
+      "patch_id": "7bb0821b4c44a69b8d37a27894a3db39cd3a00ed",
+      "head": "35d40d342db7",
+      "tier": "HIGH",
+      "at": "2026-11-12T15:39:57Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.4139758000000002,
+      "summary": "Re-reviewed the whole change. All six Done Contract checks pass. `.rail/engine`, `.rail/packs`, `.rail/ruleset.json`, the workflow and the ticket template are byte-identical to the framework at the commit in `.rail/SOURCE`, and that commit's own 145 tests pass. `.claude/settings.json` has the seed's rules. F1 is fixed (the sign of life is written before the head is read) and F2 is fixed (`rail status` shows ticket 8 dropped, with a `rail drop 8` mark on `rail/ids`). About 40 guard probes found one remaining fail-open, reported below with one wording mismatch; neither blocks the merge.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 324,
+          "claim": "A `cd` the guard can't follow is recognised only when `cd`, `pushd` or `popd` is the first word of a simple command. After `cd OTHER_REPO &&`, a `cd -` inside a brace group, after `then`, or after `!` is missed, so the push to `main` or `gh pr merge` that follows is judged as the other repository's and allowed. This is the sweep's F1 case in another spelling, and `docs/guards.md` says whatever can't be followed is judged as this project's.",
+          "check": "A guard test that expects deny for `cd OTHER && { cd -; git push origin main; }`, `cd OTHER && if true; then cd -; fi && git push origin main` and `cd OTHER && ! cd - && git push origin main`, where OTHER is another git repository.",
+          "evidence": {
+            "command": "Piped each command line to `RAIL_CLOUD=0 .rail/bin/rail hook guard` as a Bash PreToolUse event with cwd set to the ticket's worktree; /tmp/other is another git repository on branch main.",
+            "output": "allow <= cd /tmp/other && { cd -; git push origin main; }\nallow <= cd /tmp/other && if true; then cd -; fi && git push origin main\nallow <= cd /tmp/other && ! cd - && git push origin main\nallow <= cd /tmp/other && { cd -; gh pr merge 5; }\ndeny <= cd /tmp/other && cd - && git push origin main"
+          },
+          "id": "F3"
+        },
+        {
+          "severity": "advisory",
+          "file": ".rail/tickets/9.md",
+          "line": 21,
+          "claim": "The ticket's Why says work a session abandoned is resumed after an hour, but the engine copied in resumes it after `[claim] stale_minutes` = 30 (config.py default, and the ticket's own Look at says 30 minutes). The Why becomes the pull request's description, so the owner is told twice the real limit.",
+          "evidence": {
+            "command": "grep -n \"hour\\|30 min\" .rail/tickets/9.md; grep -n stale_minutes .rail/engine/rail/config.py",
+            "output": "21:looks, and work a session abandoned is resumed after an hour; `rail next` takes in issues labelled `rail`\n40:... a quiet one is resumed after 30 minutes.\n\"claim\": {\"stale_minutes\": 30, \"save_minutes\": 10},"
+          },
+          "id": "F4"
+        }
+      ]
+    },
+    {
+      "run": 3,
+      "role": "review",
+      "patch_id": "3dae05114643784a6ae8ccb4ee0a31fcc1220326",
+      "head": "95399c02bb76",
+      "tier": "HIGH",
+      "at": "2026-11-12T15:47:38Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.777228,
+      "summary": "All six Done Contract checks pass, and `.rail/engine`, the consult pack, `ruleset.json`, the workflow and the settings rules match the framework at the commit in `.rail/SOURCE` (the framework's 146 tests pass on that engine). F1 to F4 are fixed. Driving the copied engine in scratch clones with a bare remote found two advisory problems: a crash when `rail` runs with no session id, and a save hook that pushes a reviewer's scratch files when it fires during a review.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/table.py",
+          "line": 137,
+          "claim": "`_save_note` reads the cache with key `session or \"\"`, so with no `CLAUDE_CODE_SESSION_ID` it opens the directory `rail/cache/hooks/` and `rail next` dies with a traceback. Sequence: any Claude session has started in the clone (the SessionStart hook creates that folder), then `rail next --ticket 1` or a bare `rail next` runs from a plain terminal or another agent; the claim is committed before the crash.",
+          "check": "A test that runs the session-start hook with a session id, then `rail next --ticket NN` with CLAUDE_CODE_SESSION_ID unset, and expects exit 0 with an IMPLEMENT brief.",
+          "evidence": {
+            "command": "Scratch clone with a bare remote: `rail add`, `rail next` (session-a), `rail hook session-start` with session_id session-a, then `env -u CLAUDE_CODE_SESSION_ID -u RAIL_TICKET rail next --ticket 1 --json`",
+            "output": "rc 1\n  File \".../engine/rail/table.py\", line 137, in _save_note\n    if f.project.cache_read(\"hooks\", f.project.session or \"\"):\n  File \".../engine/rail/project.py\", line 224, in cache_read\n    with open(path) as f:\nIsADirectoryError: [Errno 21] Is a directory: '.../t1/a/.git/rail/cache/hooks/'"
+          },
+          "id": "F5"
+        },
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/cli.py",
+          "line": 1118,
+          "claim": "The save hooks don't know a review is running: when the session's PostToolUse hook fires while its own `rail advance` is inside a review (a parallel tool call, or advance run in the background), `save_work` commits and pushes the reviewer's in-scope scratch files. The review's `git reset --hard head` then moves the branch back behind that push, so the `review` commit never reaches the remote and local and remote stay diverged (the same end state as F1).",
+          "check": "A test whose review command writes a file inside scope_paths and sleeps, runs `rail hook pulse` for the same session meanwhile, and asserts the remote branch has no scratch file and equals the local branch after advance.",
+          "evidence": {
+            "command": "Scratch clone with a bare remote, MEDIUM ticket 1, review command `echo scratch > src/scratch.py; sleep 6; python3 fake_reviewer.py`; `rail advance 1` in one thread, `rail hook pulse` (same session) 4 s later; then `git log --oneline` of the local and remote branch, and `rail advance 1` again",
+            "output": "local : 0313aaa 1: review\n        a0cd144 1: ship\nremote: 3562b4f 1: save [skip ci]\n        139dc2f 1: save work in progress [skip ci]\n        a0cd144 1: ship\nremote has scratch: True\n(after a second rail advance 1: both heads unchanged)"
+          },
+          "id": "F6"
+        }
+      ]
+    },
+    {
+      "run": 4,
+      "role": "review",
+      "patch_id": "9105952b8827ad8769cfaaf1f93b598f695cbe4b",
+      "head": "760f1496e755",
+      "tier": "HIGH",
+      "at": "2026-11-12T16:15:20Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.6099272,
+      "summary": "Re-reviewed the whole change. The vendored engine and pack are byte-identical to the framework at fdf0911 (the commit in .rail/SOURCE), and the settings, ruleset, workflow, template, AGENTS.md section and .gitignore match its seed. All six Done Contract checks pass, the framework's 149 tests pass against this engine, and F1 to F6 are fixed. Probing the guard with about 60 command spellings and a save hook fired mid-rebase turned up one remaining advisory guard gap.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 115,
+          "claim": "`_known` expands `$OLDPWD` with the hook process's own environment, not the shell's value at that point in the command. So `cd OTHER_REPO && cd \"$OLDPWD\" && git push origin main` (the same as `cd -`, sweep F1) is allowed whenever the hook inherits an OLDPWD outside the project, although docs/guards.md says a variable the guard can't follow is judged as this project's.",
+          "check": "A guard test that sets OLDPWD in the hook's environment to a directory outside the project and expects deny for `cd OTHER && cd \"$OLDPWD\" && git push origin main`; variables the shell changes during a command (OLDPWD, PWD) should count as unknown.",
+          "evidence": {
+            "command": "Piped each command line to `RAIL_CLOUD=0 .rail/bin/rail hook guard` as a Bash PreToolUse event with cwd set to the ticket's worktree; OTHER is another git repository on branch main. First run with OLDPWD=/ inherited by the hook, second with `env -u OLDPWD`.",
+            "output": "OLDPWD=/\nallow <= cd OTHER && cd \"$OLDPWD\" && git push origin main\n(env -u OLDPWD) \"permissionDecision\": \"deny\" <= cd OTHER && cd \"$OLDPWD\" && git push origin main\n\"permissionDecision\": \"deny\" <= cd OTHER && cd - && git push origin main"
+          },
+          "id": "F7"
+        }
+      ]
+    },
+    {
+      "run": 5,
+      "role": "review",
+      "patch_id": "2bce743cf7a88b1ce1cad2467bb9918c454a1702",
+      "head": "cbc98fad2754",
+      "tier": "HIGH",
+      "at": "2026-11-12T16:27:51Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.6105911999999996,
+      "summary": "Ran all six Done Contract checks (pass, and they pass in CI on the shipped head, where only the pending review is red), diffed the vendored engine, pack, ruleset, workflow, template and settings rules against the framework at the SOURCE commit (identical), ran the framework's 150 tests at that commit (pass), and re-ran the F1\u2013F7 reproductions for the guard plus neighbouring spellings. F1\u2013F7 are fixed; one further guard spelling of the F3 kind still gets through.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 339,
+          "claim": "A `cd` is recognised only as the first word after wrappers and keywords, and `builtin` and `eval` are neither. So after `cd OTHER_REPO &&`, `builtin cd - && git push origin main` (or `eval cd - && ...`, or `gh pr merge 5` in place of the push) is still judged as the other repository's and allowed, although the shell is back in this project; this is F3's case in one more spelling.",
+          "check": "A guard test that `cd OTHER && builtin cd - && git push origin main` and the same with `eval cd -` are denied, next to the existing keyword-spelling tests.",
+          "evidence": {
+            "command": "Piped each command line to `RAIL_CLOUD=0 .rail/bin/rail hook guard` as a Bash PreToolUse event with cwd set to the ticket's worktree; OTHER is another git repository on branch main (prefix `cd OTHER && ` trimmed from the output).",
+            "output": "allow <= builtin cd - && git push origin main\nallow <= builtin cd - && gh pr merge 5\nallow <= eval cd - && git push origin main\n\"permissionDecision\": \"deny\" <= command cd - && git push origin main\n\"permissionDecision\": \"deny\" <= cd - >/dev/null && git push origin main"
+          },
+          "id": "F8"
+        }
+      ]
+    },
+    {
+      "run": 6,
+      "role": "review",
+      "patch_id": "3b1823c0486ce65fbf5dd71aaae82372df560b3a",
+      "head": "5c42034f72fb",
+      "tier": "HIGH",
+      "at": "2026-11-12T16:39:13Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.5284538000000003,
+      "summary": "Ran all six Done Contract checks (pass), confirmed the engine, pack, ruleset, workflow and settings match the framework at the commit in .rail/SOURCE, ran the framework's 151 tests against that identical engine (pass), replayed about 85 guard command lines including the spellings from F3, F7 and F8 (all now denied or asked as documented), and drove `rail save` and the hooks in scratch clones with a bare remote. F1 to F8 are fixed; one new advisory problem in the save path.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/cli.py",
+          "line": 1100,
+          "claim": "`save_work` passes every dirty path to `git add -A -- <paths>`, which dies with `pathspec did not match any files` for a staged deletion. After `git rm src/old.py` in a ticket's worktree (or one save after `git mv`, which commits only the new name and leaves `D old` staged), every `rail save` exits 2 and the Stop and pulse hooks fail without telling the agent: nothing is pushed and no `saved` event is written, so the work isn't saved and the ticket looks abandoned to other sessions after 30 minutes.",
+          "check": "A test in tests/test_save.py: claim a ticket, `git rm` (and separately `git mv`) an in-scope file in its worktree, run `rail save` twice, and assert exit 0, a `saved` event, and the deletion on the remote branch.",
+          "evidence": {
+            "command": "Scratch clone with a bare remote (framework harness, same engine), ticket 1 claimed with scope src/**. Case 1: edit src/calc.py, `git rm -q src/old.py`, then `rail save` and the Stop hook. Case 2: `git mv src/old.py src/new.py`, then `rail save` twice.",
+            "output": "== git rm: M src/calc.py\nD  src/old.py\nrail save -> rc 2 rail: git add -A -- src/calc.py src/old.py failed: fatal: pathspec 'src/old.py' did not match any files\nstop hook -> rc 0 rail hook stop: git add -A -- src/calc.py src/old.py failed: fatal: pathspec 'src/old.py' did not match any files\nremote calc.py: return a - b\n1: claim\n== git mv: R  src/old.py -> src/new.py\nrail save 1 -> rc 0 ... save: ran, pass (ticket 1: 1 files)\nstatus: D  src/old.py\nsrc/calc.py src/new.py src/old.py\nrail save 2 -> rc 2 rail: git add -A -- src/old.py failed: fatal: pathspec 'src/old.py' did not match any files"
+          },
+          "id": "F9"
+        }
+      ]
+    },
+    {
+      "run": 7,
+      "role": "review",
+      "patch_id": "081a0911e93ba620c3bddbcc844e98b953691889",
+      "head": "123e15560a17",
+      "tier": "HIGH",
+      "at": "2026-11-12T16:45:57Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.7850858,
+      "summary": "Re-reviewed the whole change and found nothing new; F1 to F9 no longer reproduce or are covered by the author's fixes. All six Done Contract checks pass, and `.rail/engine`, the pack, the ruleset, the workflow and the settings hooks match a fresh clone of the framework at the `.rail/SOURCE` commit (2ebe661). I also probed the guard with about 40 commands in local and cloud mode, ran `rail status` and `rail doctor` on this repository, and ran a scratch test of a save hook firing mid-rebase (it skips safely). I did not run the framework's own test suite against the vendored copy.",
+      "findings": []
+    },
+    {
+      "run": 8,
+      "role": "security",
+      "patch_id": "081a0911e93ba620c3bddbcc844e98b953691889",
+      "head": "f45d1c4a8f46",
+      "tier": "HIGH",
+      "at": "2026-11-12T16:48:25Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.3082762,
+      "summary": "Security seat: ran ~80 command lines through `rail hook guard` and compared `guard.deny`/`guard.ask` against the engine on main, then built a scratch repository to exercise the new contract-merged approval path, and read the save, provision and machine-hook code. The Done Contract's guard cases hold, but the new code adds two authorization holes (one guard regression, one self-approval path) and an unchecked auto-push.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/state.py",
+          "line": 199,
+          "claim": "A ticket file on the base branch with no branch and no ship is now recorded as `accepted by person via merge`, with no check that a person merged a contract pull request. Ticket files are excluded from the scope check, so an auto-merged LOW ticket whose branch adds `.rail/tickets/99.md` (tier HIGH, scope `.rail/engine/**`) gets the HIGH contract approved and claimed by the next `rail next` with no person involved; the engine on main showed the same ticket as `dropped`.",
+          "check": "A test: commit a HIGH ticket file to the base branch under another ticket's `Ticket:` trailer, with no branch and no pull request, run `rail next`, and assert no `accepted` event with `by: person` is written.",
+          "evidence": {
+            "command": "scratch repo, no remote: commit .rail/tickets/99.md (tier HIGH, scope .rail/engine/**) on main under trailer 'Ticket: 1 / Tier: LOW'; RAIL_CLOUD=0 .rail/bin/rail next --json; git show 99-change-the-engine:.rail/journal/99-events.jsonl  (and `rail status` with main's engine on a copy)",
+            "output": "99 implementing {'code': 'IMPLEMENT'} [{'step': 'contract', 'status': 'ran', 'result': 'pass', 'detail': 'its pull request was merged before the work: taken as the approval'}, ...]\n{\"v\":1,...,\"ticket\":\"99\",\"event\":\"accepted\",\"by\":\"person\",\"via\":\"merge\",\"tier\":\"HIGH\",...}\n{\"v\":1,...,\"event\":\"claimed\",...}\nOLD ENGINE: 99      dropped       none   HIGH"
+          },
+          "id": "F10"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 347,
+          "claim": "`_gh_named` treats any `gh` argument containing `github.com/` as naming a repository, including the value of `--body` or `-f`, so a merge of this project's pull request passes when its message mentions another repository's URL: `gh pr merge 5 --body \"see github.com/other/repo\"`. The engine on main denied this command; with the new rule that a merged unshipped pull request counts as the person's approval, it also lets an agent approve its own contract.",
+          "check": "A guard test: `gh pr merge 5 --body \"see github.com/other/repo\"` and `gh api -X PUT repos/{owner}/{repo}/pulls/5/merge -f commit_message=https://github.com/other/repo/issues/1` must both return deny.",
+          "evidence": {
+            "command": "guard.deny(cmd,'main','9-x',cwd=worktree,locate=...,repo='timur-makarov/throw-away-repo') with main's engine and this change's engine; also printf ... | .rail/bin/rail hook guard",
+            "output": "OLD\nDENY  gh pr merge 5 --body \"see github.com/other/repo\"\nNEW\npass  gh pr merge 5 --body \"see github.com/other/repo\"\npass  gh api -X PUT repos/{owner}/{repo}/pulls/5/merge -f commit_message=https://github.com/other/repo/issues/1\nDENY  gh api -X PUT repos/{owner}/{repo}/pulls/5/merge"
+          },
+          "id": "F11"
+        },
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/cli.py",
+          "line": 1093,
+          "claim": "The new Stop and PostToolUse hooks commit and push every untracked file inside `scope_paths` with no check, and `.gitignore` lists only `.claude/worktrees/` and `__pycache__/`. A credential or dump file an agent writes into an in-scope folder (for example `calc/token.json` under scope `calc/**`) is pushed to GitHub at the end of the turn, before verify's secret scan ever runs.",
+          "check": "A test that `save_work` leaves out untracked files matching the guard's secret patterns (`.env*`, `*.pem`, `*.key`), or runs the project's secret scan before the push.",
+          "id": "F12"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 422,
+          "claim": "The merge deny matches only `gh pr merge` with the two words adjacent, and the guard doesn't read command substitutions or `case` arms, so `gh pr -R timur-makarov/throw-away-repo merge 5`, `echo $(git push origin HEAD:main)` in backticks or `$(...)`, `case x in x) git push -f origin x;; esac` and `cd /tmp && export GIT_DIR=<repo>/.git && git push origin main` all pass. These passed on main's engine too.",
+          "check": "Guard tests for each of these lines expecting deny.",
+          "evidence": {
+            "command": "same comparison script, main's engine vs this change's",
+            "output": "OLD and NEW both:\npass  gh pr -R timur-makarov/throw-away-repo merge 5\npass  $(git push -f origin x)\npass  echo `git push origin HEAD:main`\npass  case x in x) git push -f origin x;; esac\npass  cd /tmp && export GIT_DIR=/home/user/throw-away-repo/.git && git push origin main"
+          },
+          "id": "F13"
+        }
+      ]
+    },
+    {
+      "run": 9,
+      "role": "review",
+      "patch_id": "1eb6e696d869d4d7843088a38a3a5536574afac4",
+      "head": "ceb59271a816",
+      "tier": "HIGH",
+      "at": "2026-11-12T17:12:05Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.0229662000000004,
+      "summary": "All six Done Contract checks pass, the vendored engine, pack and ruleset are byte-identical to the framework at the SOURCE commit (settings rules match the seed), and the framework's own 157 tests pass at that commit. I also probed the guard with about 40 command lines, re-derived this repository's tickets with the new engine, and simulated the new save hooks; F1 to F9 no longer reproduce, and one new advisory and one parked finding remain.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".claude/settings.json",
+          "line": 93,
+          "claim": "The PostToolUse throttle looks for its stamp under `$CLAUDE_PROJECT_DIR/.git/rail/cache/pulse/`, but `rail hook pulse` writes it to the git common directory. In a session whose project directory is a git worktree (`.git` is a file there), the stamp is never found, so the pulse hook runs a fetch and a save after every tool call instead of at most every ten minutes, and commits and pushes in-scope changes each time.",
+          "check": "A test that runs the PostToolUse command from settings.json twice with CLAUDE_PROJECT_DIR set to a linked worktree and asserts the second call is skipped.",
+          "evidence": {
+            "command": "In the ticket's worktree (`.git` is `gitdir: /home/user/throw-away-repo/.git/worktrees/9`), with CLAUDE_PROJECT_DIR=$PWD and CLAUDE_CODE_SESSION_ID=probe-sess: ran the hook's own test `[ -n \"$(find \"$CLAUDE_PROJECT_DIR/.git/rail/cache/pulse/${CLAUDE_CODE_SESSION_ID:-any}\" -mmin -10 2>/dev/null)\" ]` and, when it failed, `rail hook pulse`, twice in a row; then `ls /home/user/throw-away-repo/.git/rail/cache/pulse/`",
+            "output": "call 1: pulse hook runs\ncall 2: pulse hook runs\nprobe-sess"
+          },
+          "id": "F14"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 456,
+          "claim": "The guard reads `GH_REPO` only as a prefix on the `gh` command itself, not when it is exported earlier in the line. So `cd OTHER_REPO && export GH_REPO=timur-makarov/throw-away-repo && gh pr merge 5` merges this project's pull request and is allowed; the engine on main allows it too, so this change did not cause it (an exported `GIT_DIR` is now followed, `GH_REPO` is not).",
+          "check": "A guard test case: after `cd OTHER &&`, `export GH_REPO=<this repo> && gh pr merge 5` must be denied.",
+          "evidence": {
+            "command": "Piped each line to `RAIL_CLOUD=0 <engine>/bin/rail hook guard` as a Bash PreToolUse event with cwd set to the ticket's worktree, first with main's engine, then with this branch's; OTHER is another git repository on branch main.",
+            "output": "main:   allow <= cd OTHER && export GH_REPO=timur-makarov/throw-away-repo && gh pr merge 5\nmain:   allow <= export GH_REPO=timur-makarov/throw-away-repo; cd OTHER && gh pr merge 5\nbranch: allow <= cd OTHER && export GH_REPO=timur-makarov/throw-away-repo && gh pr merge 5\nbranch: allow <= export GH_REPO=timur-makarov/throw-away-repo; cd OTHER && gh pr merge 5\nbranch: \"permissionDecision\": \"deny\" <= cd OTHER && GH_REPO=timur-makarov/throw-away-repo gh pr merge 5"
+          },
+          "id": "F15"
+        }
+      ]
+    },
+    {
+      "run": 10,
+      "role": "review",
+      "patch_id": "7ed63b79ee44d19f0f76f414ef0ad137e912d34d",
+      "head": "eaf4299cf7fb",
+      "tier": "HIGH",
+      "at": "2026-11-12T17:23:56Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.9893274,
+      "summary": "Ran all six Done Contract checks (all pass), confirmed the vendored engine, pack, ruleset, workflow and ticket template are byte-identical to the framework at the commit in .rail/SOURCE, ran the framework's 158 tests against that engine (all pass), and probed the guard and the new claim, save and hold code with scratch scenarios. The earlier findings F1 to F14 no longer reproduce; one new advisory problem in the claim rules is reported.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/state.py",
+          "line": 167,
+          "claim": "`quiet_minutes` counts every journal event as the claiming session's sign of life, including the `continued` event another session writes when it records a person's `rail:go`. Sequence: run-1 claims a ticket and ends, the ticket waits for a person (HOLD, RETRY_CAP, STUCK_REVIEW, an amend), the person adds `rail:go`, and the run that the label triggers records it and then reports the ticket as another session's work, quiet 0 min, with NO_WORK; the ticket is not resumed until a later run at least 30 minutes on, although docs/cloud.md says the label event covers `rail:go`.",
+          "check": "A test on the fake GitHub: session run-1 claims a ticket with its events 45 minutes old, a person labels the pull request `rail:needs-you` and then `rail:go`, and `rail next` from session run-2 must answer with owner `agent` for that ticket, not NO_WORK with the ticket in `held`.",
+          "evidence": {
+            "command": "python3 /tmp/claude-0/-home-user-throw-away-repo--claude-worktrees-9/c614a1c5-559e-44a8-9b3a-6feeeb29f1f2/scratchpad/t_go.py  (framework harness on the identical engine; run-1's add and claim written with the clock 45 minutes back, then github.label(1, 'rail:needs-you'), github.label(1, 'rail:go'), and `rail next` from run-2, then from run-3)",
+            "output": "before go: human WAITING_HUMAN ['HOLD']\nafter go : none NO_WORK held= [{'ticket': '1', 'quiet_minutes': 0}]\nNo ticket to work on. New work starts with: rail add <ticket file>\nOther sessions are at work on: 1 (quiet 0 min). A ticket quiet for 30 min is resumed by the next rail next; rail next --ticket NN takes one now.\nnext run : none NO_WORK held= [{'ticket': '1', 'quiet_minutes': 0}]"
+          },
+          "id": "F16"
+        }
+      ]
+    },
+    {
+      "run": 11,
+      "role": "review",
+      "patch_id": "78af0b4ca7400888f7bb8b51acfeb00d15e0d410",
+      "head": "e2403f5acf5c",
+      "tier": "HIGH",
+      "at": "2026-11-12T17:40:02Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.7770686000000007,
+      "summary": "All six Done Contract checks pass, the vendored engine, pack, ruleset, workflow and settings rules are identical to the framework at the commit in .rail/SOURCE, and the framework's 161 tests pass on that engine; the earlier findings F1 to F16 no longer reproduce from the code and the tests that cover them. Probing the guard hook with about 80 command lines and reading the claim, save, hold and git-cache code turned up one new advisory problem: a false deny in the guard.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 522,
+          "claim": "`deny` reuses the flag `aimed` (an exported GIT_DIR points later git commands at an unknown repository) for the result of `locate(there)` on a push target. After a push from another repository to a local folder that is a git repository, `aimed` is a non-empty tuple, so every later git command in the line is judged as this project's: `cd OTHER && git push /path/backup.git main && git push origin main` is denied, though both pushes are another repository's; main's engine allows it.",
+          "check": "A guard test: with OTHER another repository and BARE a local bare repository, `cd OTHER && git push BARE main && git push -f origin topic` is allowed, as `cd OTHER && git push -f origin topic` is.",
+          "evidence": {
+            "command": "Piped each line to `RAIL_CLOUD=0 <engine>/bin/rail hook guard` as a Bash PreToolUse event with cwd set to the ticket's worktree, first with main's engine, then this branch's; S/o1 is another git repository on main, S/o2 a bare repository.",
+            "output": "main:   allow <= cd S/o1 && git push S/o2 main && git push origin main\nbranch: deny (a push to main: only the engine's merge changes it) <= cd S/o1 && git push S/o2 main && git push origin main\nmain:   allow <= cd S/o1 && git push S/o2 main && git push -f origin topic\nbranch: deny (a force push rewrites history others may have) <= cd S/o1 && git push S/o2 main && git push -f origin topic\nbranch: allow <= cd S/o1 && git push origin main"
+          },
+          "id": "F17"
+        }
+      ]
+    },
+    {
+      "run": 12,
+      "role": "review",
+      "patch_id": "98b9b6f6f5ca3c99f36535c63e8cc039ea95b7f2",
+      "head": "467cc5dd82aa",
+      "tier": "HIGH",
+      "at": "2026-11-12T17:48:51Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 4.4102521999999995,
+      "summary": "No blocking or advisory findings; one parked guard gap that main has too. All six Done Contract checks pass, the vendored engine, pack, ruleset, workflow, template and AGENTS.md are identical to the framework at the `.rail/SOURCE` commit, and the framework's 161 tests pass at that commit. About 80 command lines piped through the guard on main's engine and this one differed only as intended, and a save fired mid-rebase commits nothing. The earlier fixes (F1\u2013F9, F14, F16, F17) were checked through the framework's tests, which now include them, and not replayed one by one.",
+      "findings": [
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 278,
+          "claim": "A `cd DIR &&` is followed even when the shell skips it: in `true || cd OTHER_REPO && git push origin main` the shell never runs the cd, so the push to main (or `gh pr merge 5`) runs in this project, but the guard judges it as the other repository's and allows it. Main's engine allows the same lines, so this change did not cause it.",
+          "check": "A guard test that `true || cd OTHER && git push origin main` and `test -d x || cd OTHER && gh pr merge 5` are denied: a cd whose own command follows `||` (or any operator other than `&&`, or none) is not followed.",
+          "evidence": {
+            "command": "Piped each line to `RAIL_CLOUD=0 <engine>/bin/rail hook guard` as a Bash PreToolUse event with cwd set to the ticket's worktree, first with this branch's engine, then main's; OTHER is another git repository on branch main.",
+            "output": "branch:\nallow      <= 'true || cd OTHER && git push origin main'\nallow      <= 'test -d build || cd OTHER && gh pr merge 5'\nmain:\nallow      <= 'true || cd OTHER && git push origin main'\nallow      <= 'test -d build || cd OTHER && gh pr merge 5'"
+          },
+          "id": "F18"
+        }
+      ]
+    },
+    {
+      "run": 13,
+      "role": "security",
+      "patch_id": "98b9b6f6f5ca3c99f36535c63e8cc039ea95b7f2",
+      "head": "dc15a95ff7a1",
+      "tier": "HIGH",
+      "at": "2026-11-12T17:53:12Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.4812678,
+      "summary": "Security seat, re-review. Ran ~450 command lines through `guard.deny`/`guard.ask` of main's engine and this change's engine side by side, then confirmed the differences through the real `rail hook guard` (RAIL_CLOUD=0 and 1) and in bash. F10\u2013F12 are fixed (their commands are denied again), and the three Done Contract guard checks hold. Three new fail-open regressions against main's guard remain: two blocking, one advisory. I also read the save/provision/claim paths and settings.json and found nothing further to report.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 67,
+          "claim": "The new line scanner `_scan` doesn't know shell comments, so an apostrophe in a trailing comment opens a quote that swallows every following line: `echo start # can't fail` + newline + `git push origin HEAD:main` (or `gh api -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge`, or `git push -f`) passes the guard, though bash runs the second line. Main's engine denies these; a comment naming `<<EOF` or `$((1<<EOF))` hides the following lines the same way. With the new rule that a merged unshipped pull request is the person's approval, this also lets an agent approve its own contract.",
+          "check": "A guard test: for each denied command C, the two-line command `echo x # can't fail\\nC` is denied too, and so is `echo $((1<<EOF))\\nC\\nEOF`.",
+          "evidence": {
+            "command": "printf '%s' '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo start # can'\"'\"'t fail\\ngit push origin HEAD:main\"},\"cwd\":\"'\"$PWD\"'\"}' | .rail/bin/rail hook guard   (run for each case with this change's engine and with origin/main's; then bash -c on \"# it's fine\\necho RAN-second-line\")",
+            "output": "NEW\npass \"echo start # can't fail\\ngit push origin HEAD:main\"\npass \"git status  # what's changed\\ngh api -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge\"\npass 'echo $((1<<EOF))\\ngit push -f origin 9-x\\nEOF'\nOLD\ndeny \"echo start # can't fail\\ngit push origin HEAD:main\"\ndeny \"git status  # what's changed\\ngh api -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge\"\ndeny 'echo $((1<<EOF))\\ngit push -f origin 9-x\\nEOF'\nBASH\nRAN-second-line"
+          },
+          "id": "F19"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 456,
+          "claim": "`_gh_named` reads `GH_REPO=` from every word of the command, not only from the assignments in front of `gh`, so an option's value names a repository: `gh pr merge 5 --squash -t GH_REPO=other/repo` (or `--body GH_REPO=other/repo`) merges this project's pull request and passes. Main's engine denies it; this is F11's case with `GH_REPO=` in place of a URL.",
+          "check": "A guard test: `gh pr merge 5 -t GH_REPO=other/repo` and `gh pr merge 5 --body GH_REPO=other/repo` are denied; only words before the command word count as assignments (raw[:len(raw)-len(words)]).",
+          "evidence": {
+            "command": "printf '%s' '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"gh pr merge 5 --squash -t GH_REPO=other/repo\"},\"cwd\":\"'\"$PWD\"'\"}' | .rail/bin/rail hook guard   (this change's engine vs origin/main's)",
+            "output": "NEW\npass 'gh pr merge 5 --squash -t GH_REPO=other/repo'\npass 'gh pr merge 5 --squash --body GH_REPO=other/repo'\ndeny 'gh pr merge 5 --squash'\nOLD\ndeny 'gh pr merge 5 --squash -t GH_REPO=other/repo'\ndeny 'gh pr merge 5 --squash --body GH_REPO=other/repo'"
+          },
+          "id": "F20"
+        },
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 498,
+          "claim": "The new tracking of an exported `GH_REPO` only ever adds: it counts an `export` that never reaches `gh` (in a pipeline, inside `bash -c`, a `declare` without `-x`) and ignores `unset GH_REPO`. So `export GH_REPO=other/repo; unset GH_REPO; gh pr merge 5` and `declare GH_REPO=other/repo; gh pr merge 5` merge this project's pull request and pass; main's engine denies all four.",
+          "check": "A guard test: after `unset GH_REPO`, after an export inside a pipeline or `bash -c`, and after a `declare` without `-x`, `gh pr merge 5` is denied.",
+          "evidence": {
+            "command": "same hook comparison, this change's engine vs origin/main's; bash -c 'export GH_REPO=other/repo; unset GH_REPO; env | grep -c GH_REPO; declare GH_REPO=o/r; env | grep -c GH_REPO'",
+            "output": "NEW\npass 'export GH_REPO=other/repo; unset GH_REPO; gh pr merge 5'\npass 'export GH_REPO=other/repo | cat; gh pr merge 5'\npass \"bash -c 'export GH_REPO=other/repo'; gh pr merge 5\"\npass 'declare GH_REPO=other/repo; gh pr merge 5'\nOLD\ndeny (all four)\nBASH\n0\n0"
+          },
+          "id": "F21"
+        }
+      ]
+    },
+    {
+      "run": 14,
+      "role": "review",
+      "patch_id": "648baa1521203598843572eba74f1c2fe726c755",
+      "head": "be37f0128bd0",
+      "tier": "HIGH",
+      "at": "2026-11-12T18:09:53Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.0809234000000005,
+      "summary": "Ran the six Done Contract checks (all pass), confirmed .rail/engine, the pack, ruleset.json and the settings rules equal the framework at the commit in .rail/SOURCE, ran the framework's own suite against that engine (161 of 162 pass; the one error is a test import problem, not the engine), re-checked the earlier findings' areas, spot-checked about 30 ordinary commands against the guard for false denials, and probed `rail save` in scratch clones. One new advisory finding in the save path; nothing blocking.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/cli.py",
+          "line": 1127,
+          "claim": "`save_work` hands `git commit -- <paths>` names that git no longer knows or that `dirty` parsed wrongly. A file added to the index and then deleted from disk (`git add src/new.py; rm src/new.py`) makes one save exit 2 (the next passes), and an in-scope file whose name holds a double quote or ` -> ` makes every `rail save` and save hook fail, so no `saved` event is pushed and the ticket looks abandoned after 30 minutes.",
+          "check": "A save test with (a) a file staged then removed from disk and (b) an untracked file named `src/q\"x.py`, asserting `rail save` exits 0 and writes a `saved` event; reading names with `git status --porcelain -z` would make it pass.",
+          "evidence": {
+            "command": "Framework harness on the identical engine (remote_pair, ticket 1 claimed, scope src/**). Case 1: write src/new.py, `git add src/new.py`, remove it, `rail save` twice. Case 2: write `src/a b.py`, `src/q\"x.py`, `src/a -> b.py`, then `rail save`.",
+            "output": "AD src/new.py\nAD: 2 rail: git commit --quiet -m 1: save work in progress [skip ci] -- src/new.py failed: error: pathspec 'src/new.py' did not match any file(s) known to git\nAD2: 0 owner none \u00b7 SAVED  Nothing to save.\nnames: 2 rail: git commit --quiet -m 1: save work in progress [skip ci] -- src/a src/a b.py src/q\\\"x.py failed: error: pathspec 'src/a' did not match any file(s) known to git\nerror: pathspec 'src/q\\\"x.py' did not match any file(s) known to git"
+          },
+          "id": "F22"
+        }
+      ]
+    },
+    {
+      "run": 15,
+      "role": "security",
+      "patch_id": "648baa1521203598843572eba74f1c2fe726c755",
+      "head": "9bb1d188c1b9",
+      "tier": "HIGH",
+      "at": "2026-11-12T18:16:30Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.6645179999999997,
+      "summary": "Security seat, re-review. I ran about 170 commands through `rail hook guard` with this change's engine and with origin/main's, and ran each candidate bypass in real bash with a stub `git` to confirm the hidden command executes. F10, F11, F20 and F21 hold as fixed, and the `--owner` ask rule holds in every position I tried. The new line reader still hides commands that main's engine denies, in four ways. I read the provision, save and claim paths without running them and found nothing to report there.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 119,
+          "claim": "The `$'...'` quoting added for F19 is entered whenever a `'` follows a `$` character, even an escaped one. `echo \\$'a\\'` + newline + `git push -f origin 9-x` + newline + `#'` is read as one quoted `echo`, so the push passes, though bash runs it as a command of its own; main's engine denies it.",
+          "check": "A guard test that denies \"echo \\\\$'a\\\\'\\ngit push -f origin 9-x\\n#'\", plus a differential test: for each generated line, anything a stubbed bash runs as `git push -f` must be denied.",
+          "evidence": {
+            "command": "python3 verify.py  (each case through `.rail/bin/rail hook guard` with this change's engine and origin/main's, then `bash -c` with a stub git on PATH)",
+            "output": "new=pass  old=deny  bash=['RAN: git push -f origin 9-x'] \"echo \\\\$'a\\\\'\\ngit push -f origin 9-x\\n#'\""
+          },
+          "id": "F23"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 135,
+          "claim": "A `<<` in old-style arithmetic `$[...]` or inside `${...}` is still read as a here-document, so the following lines are dropped as its body: `echo $[1<<EOF]` + newline + `git push -f origin 9-x` + newline + `EOF]` passes, and so does `echo ${x:-<<EOF}` ... `EOF}`. Bash runs the push in both; main's engine denies both. This is F19's arithmetic case, which was fixed only for `((`.",
+          "repeats": "F19",
+          "check": "Guard tests that deny 'echo $[1<<EOF]\\ngit push -f origin 9-x\\nEOF]' and 'echo ${x:-<<EOF}\\ngit push -f origin 9-x\\nEOF}'.",
+          "evidence": {
+            "command": "python3 verify.py  (same comparison)",
+            "output": "new=pass  old=deny  bash=['RAN: git push -f origin 9-x'] 'echo $[1<<EOF]\\ngit push -f origin 9-x\\nEOF]'\nnew=pass  old=deny  bash=['RAN: git push -f origin 9-x'] 'echo ${x:-<<EOF}\\ngit push -f origin 9-x\\nEOF}'"
+          },
+          "id": "F19"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 138,
+          "claim": "The here-document delimiter is read differently from bash when it is partly quoted, so the guard skips more lines than the shell does. With `cat <<E\"O\"F`, bash ends the body at `EOF` and runs the `git push -f origin 9-x` after it, while the guard waits for a line `E\"O\"F` and drops the push as body; `cat <<'E'OF` does the same with a later line `E`. Main's engine denies both.",
+          "check": "Guard tests that deny 'cat <<E\"O\"F\\nx\\nEOF\\ngit push -f origin 9-x\\nE\"O\"F' and \"cat <<'E'OF\\nEOF\\ngit push -f origin 9-x\\nE\".",
+          "evidence": {
+            "command": "python3 verify.py  (same comparison)",
+            "output": "new=pass  old=deny  bash=['RAN: git push -f origin 9-x'] 'cat <<E\"O\"F\\nx\\nEOF\\ngit push -f origin 9-x\\nE\"O\"F'\nnew=pass  old=deny  bash=['RAN: git push -f origin 9-x'] \"cat <<'E'OF\\nEOF\\ngit push -f origin 9-x\\nE\""
+          },
+          "id": "F24"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 50,
+          "claim": "A here-document's body is now left out unless `FEEDS_SHELL` matches its line, and that pattern misses most ways to hand it to a shell. `timeout 60 bash <<EOF`, `. /dev/stdin <<EOF`, `\"bash\" <<EOF`, `{ bash; } <<EOF`, `if true; then bash <<EOF` and `! bash <<EOF`, each followed by `git push -f origin 9-x` (or `git push origin HEAD:main`) and `EOF`, all pass and all run the push. Main's engine denies every one, because it read body lines as commands.",
+          "check": "A guard test that denies a push in a here-document for each of these line shapes; or decide by the unwrapped command (`_unwrap` already knows `timeout`, keywords and paths) and read the body as commands whenever the consumer isn't a known data reader.",
+          "evidence": {
+            "command": "python3 verify.py  (same comparison)",
+            "output": "new=pass  old=deny  bash=['RAN: git push -f origin 9-x'] 'timeout 60 bash <<EOF\\ngit push -f origin 9-x\\nEOF'\nnew=pass  old=deny  bash=['RAN: git push origin HEAD:main'] '. /dev/stdin <<EOF\\ngit push origin HEAD:main\\nEOF'\nnew=pass  old=deny  bash=['RAN: git push -f origin 9-x'] '\"bash\" <<EOF\\ngit push -f origin 9-x\\nEOF'\nnew=pass  old=deny  bash=['RAN: git push -f origin 9-x'] '{ bash; } <<EOF\\ngit push -f origin 9-x\\nEOF'\nnew=pass  old=deny  bash=['RAN: git push -f origin 9-x'] 'if true; then bash <<EOF\\ngit push -f origin 9-x\\nEOF\\nfi'\nnew=pass  old=deny  bash=['RAN: git push -f origin 9-x'] '! bash <<EOF\\ngit push -f origin 9-x\\nEOF'"
+          },
+          "id": "F25"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 106,
+          "claim": "A `#` that bash doesn't read as a comment is taken as one, and the rest of the line is dropped: `echo ${x/ #/}; git push -f origin 9-x`, `echo \\ #; git push -f origin 9-x` and `echo a\\;#b; git push origin HEAD:main` pass and run the push. Main's engine passes them too, through shlex's own comment handling.",
+          "check": "Guard tests that deny these three lines.",
+          "evidence": {
+            "command": "python3 verify.py  (same comparison)",
+            "output": "new=pass  old=pass  bash=['RAN: git push -f origin 9-x'] 'echo ${x/ #/}; git push -f origin 9-x'\nnew=pass  old=pass  bash=['RAN: git push -f origin 9-x'] 'echo \\\\ #; git push -f origin 9-x'\nnew=pass  old=pass  bash=['RAN: git push origin HEAD:main'] 'echo a\\\\;#b; git push origin HEAD:main'"
+          },
+          "id": "F26"
+        }
+      ]
+    },
+    {
+      "run": 16,
+      "role": "review",
+      "patch_id": "ad7b205de403d689e7a1d65e05cbd6dbeb5ee94c",
+      "head": "c08f1c1e295f",
+      "tier": "HIGH",
+      "at": "2026-11-12T18:34:21Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.2784395999999996,
+      "summary": "Re-reviewed the whole change. All six Done Contract checks pass; the engine and pack are byte-identical to the framework at the commit in .rail/SOURCE; the guard fixes for F3, F7, F8, F15, F17 and F18 hold on ~55 probe lines. Cross-session scenarios on a fake GitHub (shipped ticket merged from another clone, takeover after 30 minutes, stand-down) behave as documented; one new advisory finding from a save after a red check.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/cli.py",
+          "line": 1130,
+          "claim": "A save with no file changes still pushes a `saved` event as a `[skip ci]` commit when the ticket has been quiet for `save_minutes`. Sequence: a ticket ships, its `rail` check fails more than ten minutes later (state `implementing`, RED_CHECK), and the Stop or pulse hook fires before the agent changes a file: the pull request's head becomes the `[skip ci]` commit, which has no check run and never gets one, so every later `rail next` in any session answers CI_WAIT with owner none, the red check is forgotten, and the ticket is neither resumed nor shown to a person.",
+          "check": "A test: ship a ticket, mark its check failed on the fake GitHub, run `rail hook stop` with the clock past `save_minutes`, and assert `rail next` still answers RED_CHECK (or that the pull request's head did not move).",
+          "evidence": {
+            "command": "Framework harness on the identical engine (github_pair, LOW ticket 1): `rail add`, `rail next`, fix, `rail advance 1`, github.ci('1-fix-add', 'failure'), `rail next`; then `rail hook stop` for the same session with minutes_since() answering 12 more; then `rail next` from session-a, from session-b in the other clone, and from session-b 45 minutes on; then `rail status`.",
+            "output": "a next (CI red) | 1 implementing agent RED_CHECK | A required check failed on PR #1 ... Fix the cause in .claude/worktrees/1, then run: rail advance 1\nhook stop rc 0\nremote head: 1: save [skip ci]\na next | 1 in-ci none CI_WAIT | Ticket 1 shipped; CI runs on PR #1 (https://github.com/acme/app/pull/1).\nb next | 1 in-ci none CI_WAIT | Ticket 1 shipped; CI runs on PR #1 (https://github.com/acme/app/pull/1).\nb next +45min | 1 in-ci none CI_WAIT | Ticket 1 shipped; CI runs on PR #1 (https://github.com/acme/app/pull/1).\nstatus: [('1', 'in-ci', 'none', 'PR #1')]"
+          },
+          "id": "F27"
+        }
+      ]
+    },
+    {
+      "run": 17,
+      "role": "review",
+      "patch_id": "82080e22cda120347ce250448f538fceafd0e47a",
+      "head": "65377a1e33fe",
+      "tier": "HIGH",
+      "at": "2026-11-12T18:47:12Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.6588709999999995,
+      "summary": "The six Done Contract checks pass, and the engine, pack, ruleset, workflow, ticket template and AGENTS.md match the framework at the `.rail/SOURCE` commit (cb18e10). I also ran the framework's suite on that engine (165 tests, 2 errors, both an import failure inside the test file itself), about forty guard probes in cloud and local mode, and scratch scenarios for a save during a rebase and for the claim's quiet time; that turned up one new advisory finding and one parked one, and none of the earlier findings still stands.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/cli.py",
+          "line": 1122,
+          "claim": "After a ticket has shipped, a save with no in-scope file changed writes nothing, so a live session shows no sign of life until its first edit. Sequence: ticket ships, its check goes red (RED_CHECK, same for a blocking review finding), the claiming session investigates for 30 minutes with its pulse hook firing but no in-scope edit; another session's bare `rail next` then takes the ticket over. docs/loop.md and the `claim.save_minutes` text say a working session shows it is alive at least every ten minutes.",
+          "check": "A test with the clock moved: ship, red check, the claiming session's pulse hook at +11, +22 and +29 minutes with no file changed, then `rail next` from a second session at +31 must leave the claim with the first session (for example by keeping the sign of life somewhere that doesn't move the pull request's head).",
+          "evidence": {
+            "command": "Framework harness on the identical engine (github_pair, LOW ticket 1), with the engine's clock shifted per call. Case 1: add, `rail next`. Case 2: add, `rail next`, fix, `rail advance 1`, github.ci('1-fix-add','failure'), `rail next`. Then in both: session-a's `rail hook pulse` at +11, +22 and +29 min with no file changed, and `rail next` from session-b in the other clone at +31 min.",
+            "output": "CASE 1: in flight, never shipped\n  events written by a's three pulse hooks: ['saved', 'saved']\n  b next at +31 min: None None none NO_WORK | claimed now by: session-a\nCASE 2: in flight after a red check (shipped patch, no file changed yet)\n  a next: RED_CHECK\n  events written by a's three pulse hooks: []\n  b next at +31 min: 1 in-ci none CI_WAIT | claimed now by: session-b"
+          },
+          "id": "F28"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/table.py",
+          "line": 218,
+          "claim": "While the agent is in the middle of the `git rebase main` that the failed ship's brief tells it to run, the worktree's HEAD is detached, so the engine doesn't see the worktree: a bare `rail next` picks RESUME and dies on `git worktree add ... already exists`. Main's engine has the same RESUME condition (`not f.worktree`), so this change did not cause it; the new save hooks skip the ticket silently in that state and leave the conflict untouched.",
+          "check": "A test that stops a ticket's worktree in a conflicted rebase and runs `rail next`: it must answer in the usual shape, not exit with a git error.",
+          "evidence": {
+            "command": "Framework harness on the identical engine (remote_pair, ticket 1 claimed and saved, the same line changed on main): `rail advance 1` (fails at rebase), `git rebase origin/main` in the worktree (stops on the conflict), `rail hook stop`, `rail save 1`, then `rail next`.",
+            "output": "stop hook rc 0 | out:  | err: \nstatus after hook:\n## HEAD (no branch)\nUU src/calc.py\nrail save rc 0 ... Ticket 1 is implementing: there is no work in flight to save here.\nnext: rail: git worktree add --quiet /tmp/rail-test-ajz_s8jz/a/.claude/worktrees/1 1-fix-add failed: fatal: '/tmp/rail-test-ajz_s8jz/a/.claude/worktrees/1' already exists"
+          },
+          "id": "F29"
+        }
+      ]
+    },
+    {
+      "run": 18,
+      "role": "security",
+      "patch_id": "82080e22cda120347ce250448f538fceafd0e47a",
+      "head": "8ca353c0f82a",
+      "tier": "HIGH",
+      "at": "2026-11-12T18:55:26Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.5790494000000006,
+      "summary": "Security seat, re-review. I read the guard, hooks, settings, the save/provision paths and the claim/approval rules, and ran each candidate command through this change's guard, origin/main's guard and real bash with stub git/gh (plus the real `rail hook guard` for both engines, and a 40,000-command fuzz for crashes that would fail open: none). F10\u2013F12 and F19\u2013F25 hold as fixed, but four new commands that main's guard denies now pass and still run in bash; two pre-existing gaps are parked.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 146,
+          "claim": "`sequence` treats an empty-string token as a command separator (`token == \"\"`), so an empty quoted argument cuts a command in two and the flags after it are never judged. `git push -o \"\" --force origin 9-x` and `git commit --allow-empty-message -m \"\" --no-verify` pass, though bash runs them whole; main's engine denies both.",
+          "check": "A guard test where each denied git command gets an empty-string value (`-o \"\"`, `-m \"\"`) before the denied flag, added to the differential bash matrix.",
+          "evidence": {
+            "command": "printf '%s' '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push -o \\\"\\\" --force origin 9-x\"},\"cwd\":\"'\"$PWD\"'\"}' | RAIL_CLOUD=0 .rail/bin/rail hook guard   (each case with this change's engine and origin/main's, then bash -c with stub git)",
+            "output": "NEW\n  pass 'git push -o \"\" --force origin 9-x'\n  pass 'git commit --allow-empty-message -m \"\" --no-verify'\n  deny 'git push -o x --force origin 9-x'\nOLD\n  deny 'git push -o \"\" --force origin 9-x'\n  deny 'git commit --allow-empty-message -m \"\" --no-verify'\nBASH\n  RAN: git push -o  --force origin 9-x\n  RAN: git commit --allow-empty-message -m  --no-verify"
+          },
+          "id": "F30"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 36,
+          "claim": "With `lexer.commenters = \"\"` the words of a trailing comment become arguments of the command, so on the base branch `git push origin # publish it` (or `git push # publish`, `git push -u origin  # set upstream`) is read as a push with refspecs `#`, `publish`, `it` and the 'push from main' rule no longer fires. Bash runs a bare `git push origin` from main; main's engine denies it.",
+          "check": "A guard test, with the branch equal to the base, for `git push`, `git push origin` and `git push -u origin` each followed by ` # some words`; and the same lines in the bash differential test run from a checkout on the base branch.",
+          "evidence": {
+            "command": "same hook comparison with \"cwd\":\"/home/user/throw-away-repo\" (checked out on main)",
+            "output": "NEW\n  pass 'git push origin # publish it'\n  deny 'git push origin'\nOLD\n  deny 'git push origin # publish it'\nBASH (cwd on main)\n  RAN: git push origin\n  RAN: git push        <- 'git push # publish'\n  RAN: git push -u origin   <- 'git push -u origin  # set upstream'"
+          },
+          "id": "F31"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 423,
+          "claim": "A `GH_REPO=` assignment in front of `gh` is believed even when it doesn't decide the repository: `GH_REPO=other/repo GH_REPO= gh pr merge 5` (the later empty assignment wins, so gh uses this checkout's repository) and `GH_REPO=other/repo gh pr merge --squash https://github.com/timur-makarov/throw-away-repo/pull/5` (the URL after a flag isn't counted as naming a repository, yet gh takes the repository from it) both pass. Main's engine denies both; this is F20's class, and with a merged unshipped pull request counting as approval it lets an agent approve its own contract.",
+          "check": "Guard tests: a merge with two `GH_REPO=` assignments where the last is empty or names this project, and a merge whose pull request URL of this project follows a flag while `GH_REPO=`/`-R` names another repository; all must be denied.",
+          "evidence": {
+            "command": "same hook comparison, this change's engine vs origin/main's; bash -c with stub gh printing $GH_REPO",
+            "output": "NEW\n  pass 'GH_REPO=other/repo GH_REPO= gh pr merge 5'\n  pass 'GH_REPO=other/repo gh pr merge --squash https://github.com/timur-makarov/throw-away-repo/pull/5'\nOLD\n  deny (both)\nBASH\n  RAN: gh pr merge 5 [GH_REPO= ...]\n  RAN: gh pr merge --squash https://github.com/timur-makarov/throw-away-repo/pull/5 [GH_REPO=other/repo ...]"
+          },
+          "id": "F32"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 437,
+          "claim": "The `gh api` endpoint is taken as the first word that isn't an option or a listed option's value, but bundled short flags aren't in `GH_API_VALUED`: in `gh api -if repos/other/x/k=v -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge` the guard takes the `-f` field value as the endpoint, concludes the command names only `other/x`, and lets the merge of this project's pull request pass. Main's engine denies it, because it looked at every word; this is F11's case again.",
+          "check": "A guard test for `gh api` merges of this repository with a decoy `repos/OTHER/NAME/` in the value of a bundled short option (`-if`, `-iH`, `-iF`); or judge a `gh api` merge as ours whenever any word names this repository's `repos/OWNER/NAME/`.",
+          "evidence": {
+            "command": "same hook comparison, this change's engine vs origin/main's",
+            "output": "NEW\n  pass 'gh api -if repos/other/x/k=v -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge'\n  deny 'gh api -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge'\nOLD\n  deny 'gh api -if repos/other/x/k=v -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge'"
+          },
+          "id": "F33"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 298,
+          "claim": "On the base branch a redirection's words count as refspecs, so `git push origin 2>&1 | tail -3` from a checkout on main passes and pushes main. Main's engine passes it too.",
+          "check": "Drop redirection tokens and their targets before counting a push's positional arguments; test `git push origin 2>&1` with the branch equal to the base.",
+          "evidence": {
+            "command": "python3 h.py (guard.deny with cwd=/home/user/throw-away-repo for both engines, then bash with stub git)",
+            "output": "new=pass old=pass bash=['RAN: git push origin [... pwd=/home/user/throw-away-repo]'] 'git push origin 2>&1 | tail -3'"
+          },
+          "id": "F34"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 61,
+          "claim": "A line whose quotes balance only because two multi-line strings meet on it is read as one quoted word: `echo \"a` / `b\" ; git push -f origin x ; echo \"c` / `d\"` passes, and bash runs the push. A here-string `<<<'EOF'` is also taken for a quoted here-document, so `$(git push -f origin x)` on the following lines isn't read. Main's engine passes both as well.",
+          "check": "Add both shapes to the bash differential matrix in tests/test_guards.py.",
+          "evidence": {
+            "command": "python3 h.py (same three-way comparison)",
+            "output": "new=pass old=pass bash=['RAN: git push -f origin x'] 'echo \"a\\nb\" ; git push -f origin x ; echo \"c\\nd\"'\nnew=pass old=pass bash=['RAN: git push -f origin x'] \"cat <<<'EOF'\\necho $(git push -f origin x)\\nEOF\""
+          },
+          "id": "F35"
+        }
+      ]
+    },
+    {
+      "run": 19,
+      "role": "refuter",
+      "patch_id": "82080e22cda120347ce250448f538fceafd0e47a",
+      "head": "3e0942d19f32",
+      "tier": "HIGH",
+      "at": "2026-11-12T18:55:56Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 1.6085287999999998,
+      "summary": "F30 holds. I ran the evidence again through `rail hook guard` and by calling `guard.deny` on this change's engine and on origin/main's: an empty quoted argument makes the new guard pass a force push and a `--no-verify` commit that main's engine denies. The cause is `sequence` at guard.py:145-146, which appends \"\" as its end-of-line sentinel and so reads a real empty-string token as a separator.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 146,
+          "repeats": "F30",
+          "claim": "`sequence` uses \"\" as its end-of-line sentinel (`for token in [*tokens, \"\"]` / `token == \"\"`), so an empty quoted argument ends the command and the words after it are never judged as part of the git command. `git push -o \"\" --force origin 9-x`, `git push \"\" --force origin 9-x` and `git commit --allow-empty-message -m \"\" --no-verify` pass the guard, though the shell runs each as one command; origin/main's engine denies the first and third.",
+          "check": "A guard test that asserts deny for `git push -o \"\" --force origin x` and `git commit --allow-empty-message -m \"\" --no-verify`, i.e. an empty-string argument placed before the denied flag.",
+          "evidence": {
+            "command": "for each command: python3 -c 'from rail import guard; print(guard.deny(CMD, \"main\", \"9-x\"))' with sys.path set to origin/main's .rail/engine (git archive) and then to this change's .rail/engine; also piped through `RAIL_CLOUD=0 .rail/bin/rail hook guard`",
+            "output": "git push -o \"\" --force origin 9-x [origin/main engine] => a force push rewrites history others may have\ngit push -o \"\" --force origin 9-x [this change] => None\ngit commit --allow-empty-message -m \"\" --no-verify [origin/main engine] => git commit --no-verify skips the project's hooks\ngit commit --allow-empty-message -m \"\" --no-verify [this change] => None\nhook guard: 'git push -o \"\" --force origin 9-x' => (no output, allowed); 'git push -o x --force origin 9-x' => deny; 'git push \"\" --force origin 9-x' => (no output, allowed); 'git commit -m x --no-verify' => deny"
+          },
+          "id": "F30"
+        }
+      ],
+      "disputes": "F30"
+    },
+    {
+      "run": 20,
+      "role": "review",
+      "patch_id": "ce846e860d601725897bcd7387cc593bf799ab6c",
+      "head": "753135b35e09",
+      "tier": "HIGH",
+      "at": "2026-11-12T19:08:43Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.2784676,
+      "summary": "No new findings. I ran all six Done Contract checks (they pass), confirmed the engine, pack, ruleset, workflow and ticket template are byte-identical to the framework at the commit in `.rail/SOURCE`, ran the framework's 167 tests on that engine (OK), and probed the guard with about 60 command lines against main's engine in both local and cloud mode. F28 is not repeated: `docs/loop.md` in this copy now describes that behaviour as intended.",
+      "findings": []
+    },
+    {
+      "run": 21,
+      "role": "security",
+      "patch_id": "ce846e860d601725897bcd7387cc593bf799ab6c",
+      "head": "1a6e458f6cfe",
+      "tier": "HIGH",
+      "at": "2026-11-12T19:12:23Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.9871760000000003,
+      "summary": "Security seat re-review. I ran about 70 command shapes through `rail hook guard` with this change's engine and with origin/main's, and through real bash with stub `git`/`gh`, and I exercised the new machine-level guard from a folder above a clone. The earlier findings F10\u2013F33 hold as fixed in what I re-ran, but the gh repository-naming logic still lets three kinds of merge of this project's pull request pass that main denies (two blocking findings), and the machine guard fails open on branch-dependent rules (advisory). I did not re-test the claim, save and provision paths beyond reading the diff.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 487,
+          "claim": "A `gh api` merge whose endpoint names the repository by id (`repositories/ID/pulls/5/merge`) is taken as another repository's whenever any other word hints at one: `GH_REPO=other/x` in front (gh api uses GH_REPO only for `{owner}/{repo}` placeholders) or a field value such as `-f commit_title=repos/other/y/z` (the new `[/=]` in the regex reads option values). Both merge this project's pull request and pass; main's engine denies both, and a merged unshipped pull request now counts as the person's approval. This is the F11/F32 class again.",
+          "check": "Add to test_a_merge_is_judged_by_the_repository_it_names and the bash matrix: `gh api -X PUT repositories/N/pulls/5/merge` with `GH_REPO=other/x` in front and with `-f k=repos/other/y/z` must be denied; more generally a `gh api` merge is 'other' only when the endpoint word itself names another OWNER/NAME.",
+          "evidence": {
+            "command": "python3 cmp.py $PWD c2.json   (each command through `rail hook guard` with this change's engine and origin/main's, RAIL_CLOUD=0, cwd = the ticket worktree; then bash -c with stub gh)",
+            "output": "new=pass old=deny 'GH_REPO=other/x gh api -X PUT repositories/123/pulls/5/merge'\n      bash=['RAN: gh api -X PUT repositories/123/pulls/5/merge [GH_REPO=other/x ... pwd=.../worktrees/9]']\nnew=pass old=deny 'GH_REPO=other/x gh api --method PUT /repositories/123/pulls/5/merge -f merge_method=squash'\nnew=pass old=deny 'gh api -X PUT repositories/123/pulls/5/merge -f commit_title=repos/other/y/z'\n      bash=['RAN: gh api -X PUT repositories/123/pulls/5/merge -f commit_title=repos/other/y/z [GH_REPO=unset ...]']\nnew=deny old=deny 'gh api -X PUT repositories/123/pulls/5/merge'"
+          },
+          "id": "F36"
+        },
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 474,
+          "claim": "A `GH_REPO=other/x` assignment in front of the command is believed even when a wrapper between it and `gh` removes it from the environment: `GH_REPO=other/x env --unset=GH_REPO gh pr merge 5`, `env -uGH_REPO` and `env -i PATH=\"$PATH\" gh pr merge 5` all run `gh pr merge 5` on this checkout's repository with GH_REPO unset, and pass. Main's engine denies all three; this is F32's class (an assignment that doesn't decide the repository).",
+          "check": "Bash-matrix cases with stub gh printing $GH_REPO: `GH_REPO=other/x env --unset=GH_REPO gh pr merge 5`, `env -uGH_REPO`, `env -i`, `exec -c` must be denied. A GH_REPO= hint should count only when no wrapper word between it and gh can clear or reset the environment (env -u/--unset/-i, exec -c, sudo/doas).",
+          "evidence": {
+            "command": "python3 cmp.py $PWD c2.json   (same three-way comparison)",
+            "output": "new=pass old=deny 'GH_REPO=other/x env --unset=GH_REPO gh pr merge 5'\n      bash=['RAN: gh pr merge 5 [GH_REPO=unset GIT_DIR=unset pwd=/home/user/throw-away-repo/.claude/worktrees/9]']\nnew=pass old=deny 'GH_REPO=other/x env -uGH_REPO gh pr merge 5'\n      bash=['RAN: gh pr merge 5 [GH_REPO=unset ...]']\nnew=pass old=deny 'GH_REPO=other/x env -i PATH=\"$PATH\" STUBLOG=\"$STUBLOG\" gh pr merge 5'\n      bash=['RAN: gh pr merge 5 [GH_REPO=unset ...]']"
+          },
+          "id": "F37"
+        },
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/hooks.py",
+          "line": 109,
+          "claim": "The new machine-level guard (`rail hook guard --machine`, for a session that stands above its repositories) sets the branch to \"\" when the session's folder is not inside a project, so every rule that depends on the current branch fails open once the guard loses track of the directory: `cd repo; git push`, `cd repo` + newline + `git push origin`, `pushd repo; git push -u origin` and `cd repo; git merge 9-x` pass with the repository checked out on main, while the `&&` forms are denied. docs/guards.md says what the guard can't follow is judged as this project's.",
+          "check": "A test that runs `hook guard --machine` with cwd above a clone checked out on the base branch and expects deny for `cd repo; git push` and `cd repo; git merge x`. When the place is unknown, judge the command against each project's own checked-out branch.",
+          "evidence": {
+            "command": "clone on main at W/repo with this change's engine; cd W; printf '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"%s\"},\"cwd\":\"'$PWD'\",\"session_id\":\"s1\"}' \"$c\" | RAIL_CLOUD=1 repo/.rail/bin/rail hook guard --machine",
+            "output": "cd repo && git push                \"permissionDecision\": \"deny\"\ncd repo; git push                  pass\ncd repo\\ngit push origin           pass\ncd repo && git merge 9-x           \"permissionDecision\": \"deny\"\ncd repo; git merge 9-x             pass\npushd repo; git push -u origin     pass"
+          },
+          "id": "F38"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 459,
+          "claim": "A repository name with a variable inside it is read as another repository's name, so `O=timur-makarov; gh pr merge 5 -R $O/throw-away-repo` and `gh api -X PUT repos/timur-makarov/throw-away-rep${x}o/pulls/5/merge` pass and merge this project's pull request; `GH_REPO=other/x env -u GH_REPO gh pr merge 5` passes too. A command inside a function body (`f() { git push -f origin x; }; f`) and a `cd` resolved through CDPATH are not read either. Main's engine passes all of these as well.",
+          "check": "Treat a repository hint containing `$` or a backtick as unreadable (judged by where the command runs), and add these lines to the bash matrix.",
+          "evidence": {
+            "command": "python3 cmp.py $PWD c1.json   (same three-way comparison)",
+            "output": "new=pass old=pass 'O=timur-makarov; gh pr merge 5 -R $O/throw-away-repo'\n      bash=['RAN: gh pr merge 5 -R timur-makarov/throw-away-repo ...']\nnew=pass old=pass 'gh api -X PUT repos/timur-makarov/throw-away-rep${x}o/pulls/5/merge'\n      bash=['RAN: gh api -X PUT repos/timur-makarov/throw-away-repo/pulls/5/merge ...']\nnew=pass old=pass 'GH_REPO=other/x env -u GH_REPO gh pr merge 5'\n      bash=['RAN: gh pr merge 5 [GH_REPO=unset ...]']\nnew=pass old=pass 'f() { git push -f origin x; }; f'\n      bash=['RAN: git push -f origin x ...']\nnew=pass old=pass 'export CDPATH=/home/user/throw-away-repo/.claude/worktrees; cd /tmp && cd 9 && git push -f origin x'\n      bash=['RAN: git push -f origin x [... pwd=/home/user/throw-away-repo/.claude/worktrees/9]']"
+          },
+          "id": "F39"
+        }
+      ]
+    },
+    {
+      "run": 22,
+      "role": "review",
+      "patch_id": "836f1a7a91cd2ccaaa82d0db7136983d721310f2",
+      "head": "34fd0c44e4dd",
+      "tier": "HIGH",
+      "at": "2026-11-12T19:25:57Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.211056399999999,
+      "summary": "No new findings. I ran the six Done Contract checks (all pass, in cloud and own-machine mode) and confirmed `.rail/engine`, `.rail/packs` and `.rail/ruleset.json` are byte-identical to the framework at the `.rail/SOURCE` commit, with the settings rules, workflow and AGENTS.md matching its seed. The framework's own 167 tests pass on that engine, a fresh-clone `rail ci` at the shipped head passes every step up to the review, and about 50 everyday and malformed commands through the guard and hooks gave no wrong deny, ask or crash. The earlier fixes are present in the copied code; F28 stays declined as designed, since `docs/loop.md` now states that behaviour.",
+      "findings": []
+    },
+    {
+      "run": 23,
+      "role": "security",
+      "patch_id": "836f1a7a91cd2ccaaa82d0db7136983d721310f2",
+      "head": "823e2ab5a6cd",
+      "tier": "HIGH",
+      "at": "2026-11-12T19:30:31Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.1085844,
+      "summary": "Ran about 250 commands through `rail hook guard` with this change's engine and origin/main's (RAIL_CLOUD=0, cwd = the ticket worktree), and ran the differing ones in real bash with stub git and gh. One regression: a `cd` behind a shell keyword or inside braces is followed even when the shell never runs it. I also read the save, provision, machine-hook, contract-merge and CI paths and found nothing else to report; F10\u2013F12, F19\u2013F25, F30\u2013F33 and F36\u2013F38 stay fixed for the inputs I retried.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 552,
+          "claim": "The new KEYWORDS unwrapping makes a `cd DIR &&` behind `then`, `do`, `else` or `{` count as followed, though the shell may never run it. `if false; then cd /tmp && true; fi; git push -f origin x` (also `git push origin HEAD:main`, `gh pr merge 5`, the `while false; do ...; done` form and `false && { cd /tmp && true; }; ...`) passes the guard while bash runs the command in this project; main's engine denies all of them.",
+          "check": "Add these lines to the bash differential matrix (test_what_bash_really_runs_is_denied): a `cd /tmp && true` inside `if false; then ...; fi`, `while false; do ...; done`, `until true; do ...; done` and `false && { ...; }`, each followed by `; git push -f origin x` and `; gh pr merge 5`. A cd after a keyword or inside braces should leave `here` unknown.",
+          "evidence": {
+            "command": "python3 cmp.py c3.json  (each command through `rail hook guard` with this change's engine and origin/main's, RAIL_CLOUD=0, cwd = the ticket worktree; then bash -c with stub git/gh on PATH)",
+            "output": "new=pass  old=deny  'if false; then cd /tmp && true; fi; git push -f origin x'\nnew=pass  old=deny  'if false; then cd /tmp && true; fi; git push origin HEAD:main'\nnew=pass  old=deny  'if false; then cd /tmp && true; fi; gh pr merge 5'\nnew=pass  old=deny  'while false; do cd /tmp && true; done; git push -f origin x'\nnew=pass  old=deny  'until true; do cd /tmp && true; done; git push -f origin x'\nnew=pass  old=deny  '[ -d /nonexistent ] && { cd /tmp && true; }; git push -f origin x'\nnew=pass  old=deny  'false && { cd /tmp && true; }; git push -f origin x'\nBASH\n'if false; then cd /tmp && true; fi; git push origin HEAD:main' -> ['RAN: git push origin HEAD:main [pwd=/home/user/throw-away-repo/.claude/worktrees/9]']\n'if false; then cd /tmp && true; fi; gh pr merge 5' -> ['RAN: gh pr merge 5 [pwd=/home/user/throw-away-repo/.claude/worktrees/9]']\n'while false; do cd /tmp && true; done; git push -f origin x' -> ['RAN: git push -f origin x [pwd=/home/user/throw-away-repo/.claude/worktrees/9]']\n'false && { cd /tmp && true; }; git push -f origin x' -> ['RAN: git push -f origin x [pwd=/home/user/throw-away-repo/.claude/worktrees/9]']"
+          },
+          "id": "F40"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 279,
+          "claim": "A `cd DIR &&` that a short-circuit skips is still followed: `false && cd /tmp && true; git push origin HEAD:main` and `if true; then :; else cd /tmp && true; fi; gh api -X PUT repos/{owner}/{repo}/pulls/5/merge` pass, and bash runs the push and the merge in this project. Main's engine passes both as well, and also passes a merge through `gh api graphql` (mergePullRequest).",
+          "check": "In the bash differential matrix: `false && cd /tmp && true; <denied command>`; a cd should be believed only when it is the first command of its && chain.",
+          "evidence": {
+            "command": "python3 cmp.py c2.json / c3.json  (same three-way comparison)",
+            "output": "new=pass  old=pass  'false && cd /tmp && true; git push origin HEAD:main'\nnew=pass  old=pass  'if true; then :; else cd /tmp && true; fi; gh api -X PUT repos/{owner}/{repo}/pulls/5/merge'\nBASH -> ['RAN: gh api -X PUT repos/{owner}/{repo}/pulls/5/merge [pwd=/home/user/throw-away-repo/.claude/worktrees/9]']\nnew=pass  old=pass  \"gh api graphql -f query='mutation{mergePullRequest(input:{pullRequestId:\\\"x\\\"}){clientMutationId}}'\""
+          },
+          "id": "F41"
+        }
+      ]
+    },
+    {
+      "run": 24,
+      "role": "refuter",
+      "patch_id": "836f1a7a91cd2ccaaa82d0db7136983d721310f2",
+      "head": "5aa99cfe6b0d",
+      "tier": "HIGH",
+      "at": "2026-11-12T19:31:03Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 1.6428266,
+      "summary": "F40 holds. I ran the five commands through `rail hook guard` with this change's engine and with origin/main's engine (RAIL_CLOUD=0, cwd = the ticket worktree): the new guard prints nothing for all five, while main's denies all five. Bash stays in the worktree after `if false; then cd /tmp && true; fi`, so the push or merge runs in this project; this is a fail-open regression of the kind the ticket sets out to close, and the guard docs do not list it as intended.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 552,
+          "repeats": "F40",
+          "claim": "The KEYWORDS unwrapping makes a `cd DIR &&` behind `then`, `do` or `{` count as followed, though the shell may never run it. `if false; then cd /tmp && true; fi; git push -f origin x` (also `git push origin HEAD:main`, `gh pr merge 5`, the `while false; do ...; done` form and `false && { cd /tmp && true; }; ...`) passes the guard while bash runs it in this project; main's engine denies all five.",
+          "check": "A guard test that expects a deny for a force push, a push to the base branch and `gh pr merge` after a `cd DIR &&` inside `if false; then ...; fi`, `while false; do ...; done` and `false && { ...; }`.",
+          "evidence": {
+            "command": "for each command: printf '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":CMD},\"cwd\":\"$PWD\"}' | RAIL_CLOUD=0 .rail/bin/rail hook guard   (NEW) and the same with origin/main's .rail/bin/rail (MAIN); then bash -c 'if false; then cd /tmp && true; fi; pwd'",
+            "output": "== if false; then cd /tmp && true; fi; git push -f origin x\nNEW: \nMAIN: deny: a force push rewrites history others may have.\n== if false; then cd /tmp && true; fi; git push origin HEAD:main\nNEW: \nMAIN: deny: a push to main: only the engine's merge changes it.\n== if false; then cd /tmp && true; fi; gh pr merge 5\nNEW: \nMAIN: deny: gh pr merge merges outside the engine\n== while false; do cd /tmp && true; done; git push -f origin x\nNEW: \nMAIN: deny: a force push rewrites history others may have.\n== false && { cd /tmp && true; }; git push -f origin x\nNEW: \nMAIN: deny: a force push rewrites history others may have.\n== git push -f origin x\nNEW: deny (control)\nbash pwd after the skipped cd: /home/user/throw-away-repo/.claude/worktrees/9"
+          },
+          "id": "F40"
+        }
+      ],
+      "disputes": "F40"
+    },
+    {
+      "run": 25,
+      "role": "review",
+      "patch_id": "7fa7640ffdfe9f0a454349886a758d18a86a0e53",
+      "head": "f6b7e88e1492",
+      "tier": "HIGH",
+      "at": "2026-11-12T19:42:14Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.5747884,
+      "summary": "No new findings. All six Done Contract checks pass, and `.rail/engine`, `.rail/packs`, `ruleset.json`, `rail.yml`, `TEMPLATE.md`, `AGENTS.md` and the settings rules match the framework at the `.rail/SOURCE` commit (df7dd09), whose 167 tests pass. I probed the guard hook with about 70 everyday and malformed commands (no crash or false deny), confirmed the machine asks step aside in a cloud session while the rail denies stay, and checked that tickets 1\u20139 derive correctly under the new counter branch. F28 is not repeated: `docs/loop.md` now states the declined behaviour as intended.",
+      "findings": []
+    },
+    {
+      "run": 26,
+      "role": "security",
+      "patch_id": "7fa7640ffdfe9f0a454349886a758d18a86a0e53",
+      "head": "97471a866445",
+      "tier": "HIGH",
+      "at": "2026-11-12T19:46:32Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.0114976,
+      "summary": "Security seat: I ran about 250 command lines through `rail hook guard` with this change's engine and origin/main's, then through real bash with stub git/gh, covering cd-following, git -C/--git-dir, push targets, gh repository naming, wrappers, keywords, redirections and the --owner ask. I also read the save, provision, machine-hook and contract-merged paths in the diff. One regression against main's guard was found (a reassigned $PWD); the earlier findings F10\u2013F40 did not reproduce in the cases I retried.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 268,
+          "claim": "`_expand` now fills `$PWD` with the directory the guard believes the shell is in, but the command itself can reassign PWD. `cd /other/repo && PWD=<this worktree> && cd $PWD && gh pr merge 5` (also `git push origin HEAD:main` and `git push -f origin x`) passes, and bash runs it in this project; main's engine denies all three.",
+          "check": "Add to the bash differential matrix (test_what_bash_really_runs_is_denied) a shape `cd OTHER && PWD=WORK && cd $PWD && <denied command>`, and treat `$PWD` as unknown once any word of the command assigns PWD or HOME.",
+          "evidence": {
+            "command": "python3 cmp.py c4.json  (each command through `rail hook guard` with this change's engine and origin/main's, RAIL_CLOUD=0, cwd = the ticket worktree; then bash -c with stub git/gh). S/other is a scratch git repository, R is /home/user/throw-away-repo.",
+            "output": "new=pass old=deny 'cd S/other && PWD=R/.claude/worktrees/9 && cd $PWD && gh pr merge 5'\n     bash=['RAN: gh pr merge 5 [GH_REPO=unset GIT_DIR=unset pwd=R/.claude/worktrees/9]']\nnew=pass old=deny 'cd S/other && PWD=R/.claude/worktrees/9 && cd $PWD && git push origin HEAD:main'\n     bash=['RAN: git push origin HEAD:main [GH_REPO=unset GIT_DIR=unset pwd=R/.claude/worktrees/9]']\nnew=pass old=deny 'cd S/other && PWD=R/.claude/worktrees/9 && cd $PWD && git push -f origin x'\n     bash=['RAN: git push -f origin x [... pwd=R/.claude/worktrees/9]']"
+          },
+          "id": "F42"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 253,
+          "claim": "Several forms still run a denied command in this project and pass, on main's engine as well: a reassigned HOME (`HOME=<worktree>; cd /other && cd ~ && git push -f origin x`), a git option with a value between two `-C` (`git -C /other --namespace x -C <worktree> push -f origin x`), `env -S 'git push -f origin x'`, `coproc git push -f origin x`, and `cd /other && true & git push -f origin x`. From another repository, `git push -f file:///home/user/throw-away-repo x` and `git push -f https://github.com:443/timur-makarov/throw-away-repo x` also pass.",
+          "evidence": {
+            "command": "python3 cmp.py c2.json / c3.json / c4.json  (same three-way comparison)",
+            "output": "new=pass old=pass 'HOME=R/.claude/worktrees/9 ; cd S/other && cd ~ && git push -f origin x'  bash=['RAN: git push -f origin x [... pwd=R/.claude/worktrees/9]']\nnew=pass old=pass 'git -C S/other --namespace x -C R/.claude/worktrees/9 push -f origin x'  bash=['RAN: ... pwd=R/.claude/worktrees/9]']\nnew=pass old=pass \"env -S 'git push -f origin x'\"  bash=['RAN: git push -f origin x [... pwd=R/.claude/worktrees/9]']\nnew=pass old=pass 'coproc git push -f origin x'  bash=['RAN: git push -f origin x ...']\nnew=pass old=pass 'cd S/other && true & git push -f origin x'  bash=['RAN: git push -f origin x [... pwd=R/.claude/worktrees/9]']\nnew=pass old=pass 'cd S/other && git push -f file:///home/user/throw-away-repo x'\nnew=pass old=pass 'cd S/other && git push -f https://github.com:443/timur-makarov/throw-away-repo x'"
+          },
+          "id": "F43"
+        }
+      ]
+    },
+    {
+      "run": 27,
+      "role": "refuter",
+      "patch_id": "7fa7640ffdfe9f0a454349886a758d18a86a0e53",
+      "head": "73ef9b1eff0a",
+      "tier": "HIGH",
+      "at": "2026-11-12T19:47:04Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 1.6532406,
+      "summary": "F42 holds. I ran the three commands through `rail hook guard` with this change's engine and with origin/main's engine (RAIL_CLOUD=0, cwd = the ticket worktree): the new engine passes all three, main's denies all three, and bash ends up in this project's worktree after the `cd $PWD`. The controls behave as intended (bare `gh pr merge 5` is denied; `cd other && gh pr merge 5` passes), so the hole is specifically `_expand` trusting a `$PWD` the command reassigned.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 268,
+          "repeats": "F42",
+          "claim": "`_expand` fills `$PWD` with the directory the guard believes the shell is in, but the command can reassign PWD first. `cd /other/repo && PWD=<this worktree> && cd $PWD && gh pr merge 5` (also `git push origin HEAD:main` and `git push -f origin x`) passes the guard while bash runs it in this project; origin/main's engine denies all three, so this is a fail-open regression in the guard the ticket sets out to close.",
+          "check": "A guard test that a command assigning PWD (`PWD=...`, `export PWD=...`) before `cd $PWD` is judged as this project's: `cd OTHER && PWD=ROOT && cd $PWD && gh pr merge 5`, `... && git push origin HEAD:main` and `... && git push -f origin x` must each return deny.",
+          "evidence": {
+            "command": "for each command: printf '%s' '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":CMD},\"cwd\":W}' | RAIL_CLOUD=0 .rail/bin/rail hook guard   (new engine), and the same through origin/main's engine extracted with `git archive origin/main .rail`; then `cd S/other && PWD=W && cd $PWD && pwd` in bash. W=/home/user/throw-away-repo/.claude/worktrees/9, S/other = a scratch git repository.",
+            "output": "new engine: no output (pass) for all three:\n  cd S/other && PWD=W && cd $PWD && gh pr merge 5\n  cd S/other && PWD=W && cd $PWD && git push origin HEAD:main\n  cd S/other && PWD=W && cd $PWD && git push -f origin x\norigin/main engine:\n  deny: gh pr merge merges outside the engine: rail advance merges a shipped ticket.\n  deny: a push to main: only the engine's merge changes it.\n  deny: a force push rewrites history others may have.\nbash pwd after `cd S/other && PWD=W && cd $PWD`: /home/user/throw-away-repo/.claude/worktrees/9\ncontrols (new engine): `gh pr merge 5` -> deny; `cd S/other && gh pr merge 5` -> pass"
+          },
+          "id": "F42"
+        }
+      ],
+      "disputes": "F42"
+    },
+    {
+      "run": 28,
+      "role": "review",
+      "patch_id": "41a990ddb1c770a72b8a85265a47cb8ccf1e7f02",
+      "head": "ae4f1c9fef0b",
+      "tier": "HIGH",
+      "at": "2026-11-13T07:18:38Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.6904161999999996,
+      "summary": "Re-reviewed the whole change and found nothing new; no earlier finding still stands, and the one the author declined (F28) is now described as intended in docs/loop.md. All six Done Contract checks pass; the engine, pack, ruleset, workflow and ticket template are byte-identical to the framework at the commit in .rail/SOURCE (which is framework main), and the framework's own 168 tests pass on it. The only change since the last clean review (a command that sets PWD or HOME itself, and rail accept with rail:go already on the pull request) was probed through the guard hook in local and cloud mode, along with the PostToolUse throttle, with no wrong result.",
+      "findings": []
+    },
+    {
+      "run": 29,
+      "role": "security",
+      "patch_id": "41a990ddb1c770a72b8a85265a47cb8ccf1e7f02",
+      "head": "87b96fc7c2e9",
+      "tier": "HIGH",
+      "at": "2026-11-13T07:23:24Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.3182188,
+      "summary": "Security seat, re-review of the whole change. I ran candidate commands through `rail hook guard` with this change's engine and with origin/main's (RAIL_CLOUD=0, cwd = the ticket worktree), and checked what `gh` 2.89 does with the same arguments using read-only `gh pr view` under GH_DEBUG=api. I also read the save, provision, claim, contract-merge and machine-hook paths. The earlier blocking findings I retried stay fixed; one new regression in the pull request URL rule is blocking.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 506,
+          "claim": "A `github.com/...` argument of `gh pr merge` is taken as proof of another repository, but the guard compares the raw text while gh decodes it. `gh pr merge https://github.com/timur-makarov/throw%2Daway-repo/pull/5` passes and gh resolves it to this repository, so it merges this project's pull request; main's engine denies it. A scheme-less `gh pr merge github.com/o/x` also passes, and gh reads that as a head branch name in this repository. This is the F11/F32 class, and a merged unshipped pull request counts as the person's approval.",
+          "check": "In test_a_merge_is_judged_by_the_repository_it_names: a pull request URL of this repository with a percent-encoded character in owner or name, and a scheme-less github.com/OWNER/NAME argument, must be denied. A URL counts as another repository only when it has http(s)://, owner and name match [A-Za-z0-9._-]+ with no %, and the path is /pull/N.",
+          "evidence": {
+            "command": "python3 cmp.py c1.json c2.json  (each command through `rail hook guard` with this change's engine and origin/main's, RAIL_CLOUD=0, cwd = ticket worktree); GH_DEBUG=api gh pr view 'https://github.com/timur-makarov/throw%2Daway-repo/pull/11' --json number ; GH_DEBUG=api gh pr view 'github.com/o/x' --json number",
+            "output": "new=pass old=deny 'gh pr merge https://github.com/timur-makarov/throw%2Daway-repo/pull/5'\nnew=pass old=deny 'gh pr merge -b note https://github.com/timur-makarov/throw%2Daway-repo/pull/5'\nnew=pass old=deny 'gh pr merge https://github.com/timur-makarov/throw-away-rep%6f/pull/5 --squash --admin'\nnew=pass old=deny 'gh pr merge github.com/o/x'\nnew=pass old=deny 'gh pr merge www.github.com/o/x --squash'\ngh: query PullRequestByNumber ... GraphQL variables: {\"owner\":\"timur-makarov\",\"pr_number\":11,\"repo\":\"throw-away-repo\"}\ngh: query PullRequestForBranch ... GraphQL variables: {\"headRefName\":\"github.com/o/x\",\"owner\":\"timur-makarov\",\"repo\":\"throw-away-repo\",\"states\":null}"
+          },
+          "id": "F44"
+        },
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/hooks.py",
+          "line": 41,
+          "claim": "The new machine-level guard only looks for Rail projects directly below the session's folder. From a folder two levels above the repository (session in `m`, repository in `m/work/repo`), `cd work/repo && git push origin main` and `cd <abs path>/repo && git push -f origin x` pass with no judgement at all, while docs/cloud.md says the guard covers every Rail repository below the session's folder.",
+          "check": "A test of `rail hook guard --machine` with cwd two levels above a Rail repository: `cd a/repo && git push -f origin x` must be denied (resolve the projects from the directories the command names, not only from the children of cwd).",
+          "evidence": {
+            "command": "clone at $S/m/work/repo; printf '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"%s\"},\"cwd\":\"$S/m\",\"session_id\":\"s1\"}' \"$c\" | RAIL_CLOUD=1 $S/m/work/repo/.rail/bin/rail hook guard --machine   (and the same with cwd=$S/m/work)",
+            "output": "\"deny\"  cwd=m/work :: cd repo && git push origin main\npass    cwd=m :: cd work/repo && git push origin main\npass    cwd=m :: cd m/work/repo && git push -f origin x"
+          },
+          "id": "F45"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 498,
+          "claim": "Several `gh` forms still reach this project's pull request and pass, on main's engine as well: a `-R` or `--repo=` that gh consumes as another option's value (`gh pr merge 5 --body --repo=other/x`, `gh pr merge -t -R feature/x`), `-R https://github.com/timur-makarov/throw%2Daway-repo`, a merge by repository id run from another repository's folder (`cd /other && gh api -X PUT repositories/ID/pulls/5/merge`), and the cloud's auto-merge route (`gh api -X PUT repos/{owner}/{repo}/pulls/5/ccr/auto_merge`), which has no `/merge` in its path.",
+          "check": "Add these lines to the differential matrix in test_what_bash_really_runs_is_denied with a stub gh; treat `/ccr/auto_merge` as a merge path and a `repositories/ID/` merge path as this project's wherever it runs.",
+          "evidence": {
+            "command": "python3 cmp.py c1.json c2.json  (same comparison)",
+            "output": "new=pass old=pass 'gh pr merge 5 -R https://github.com/timur-makarov/throw%2Daway-repo'\nnew=pass old=pass 'gh pr merge -t -R feature/x'\nnew=pass old=pass 'gh pr merge 5 --body --repo=other/x'\nnew=pass old=pass 'cd S/other && gh api -X PUT repositories/123/pulls/5/merge'\nnew=pass old=pass 'gh api -X PUT repos/timur-makarov/throw-away-repo/pulls/5/ccr/auto_merge'\nnew=pass old=pass 'gh api -X PUT repos/{owner}/{repo}/pulls/5/ccr/auto_merge'"
+          },
+          "id": "F46"
+        }
+      ]
+    },
+    {
+      "run": 30,
+      "role": "review",
+      "patch_id": "924d74c9b19f90a7d8db0915b3bf530625e45f8d",
+      "head": "c1f39b65142b",
+      "tier": "HIGH",
+      "at": "2026-11-13T07:37:12Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 2.4596874000000004,
+      "summary": "Ran all six Done Contract checks (all pass), diffed the vendored engine, pack, launcher, ruleset, workflow, template, AGENTS.md and settings against the framework at the commit in .rail/SOURCE (engine and pack identical; settings differ only in rule order), and ran the framework's 169 tests at that commit (pass). Put about 80 command lines through main's and the branch's guard in both cloud and local mode (no crash; the only new denies are the documented fail-closed cases), and checked the new verbs, flags and docs pages; the earlier findings marked fixed hold and I found nothing new to report.",
+      "findings": []
+    },
+    {
+      "run": 31,
+      "role": "security",
+      "patch_id": "924d74c9b19f90a7d8db0915b3bf530625e45f8d",
+      "head": "43917ed7758f",
+      "tier": "HIGH",
+      "at": "2026-11-13T07:41:53Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.2319966000000004,
+      "summary": "Security seat, re-review of the whole change. I ran about 130 commands through `rail hook guard` with this change's engine and with origin/main's, and through real bash with stub git and gh: no command that main denies passes now, and the fixes for the earlier blocking findings (F10 to F45) hold in every shape I tried. One new advisory (a marker file turns the machine-level guard off) and three parked items; `python3 -m unittest` was not run, and F10 and the fork pull request item were checked by reading the code only.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/hooks.py",
+          "line": 54,
+          "claim": "The new machine-level guard steps aside for a project whenever the file `rail/cache/hooks/<session id>` exists in that repository's git directory, and that file is writable by any command the agent runs. In a session above several repositories, where the machine hooks are the only guard, `mkdir -p repo/.git/rail/cache/hooks && echo 1 > repo/.git/rail/cache/hooks/$CLAUDE_CODE_SESSION_ID` makes `cd repo && git push -f origin x` (and pushes to main, and merges) pass with no judgement for the rest of the session.",
+          "check": "A test that writes the marker by hand in a session whose repository hooks did not run, then expects `rail hook guard --machine` to still deny `cd repo && git push -f origin x`; or have the guard deny Bash writes into `rail/cache/hooks`.",
+          "evidence": {
+            "command": "scratch repo at $S/m/repo with this change's .rail; cd $S/m; printf '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cd repo && git push -f origin x\"},\"cwd\":\"'$S/m'\",\"session_id\":\"s1\"}' | RAIL_CLOUD=1 repo/.rail/bin/rail hook guard --machine; mkdir -p repo/.git/rail/cache/hooks && echo 1 > repo/.git/rail/cache/hooks/s1; (same hook call again)",
+            "output": "\"permissionDecision\": \"deny\"\npass"
+          },
+          "id": "F47"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 296,
+          "claim": "Several forms still run a denied command in this project and pass, on main's engine too: a `cd` the shell doesn't perform as the guard reads it (`cd () (true)` or `shopt -s expand_aliases; alias cd=true` on an earlier line, `2>/dev/null cd <repo> && ...`, `trap 'cd <repo>' DEBUG`), a command in a `trap ... EXIT`, a flag after an argument that spans lines (`git push origin x \"<newline>\" --force`), and from another repository `git -c remote.origin.url=<this repo> push -f origin x` or `git push -f --repo=<this repo>`.",
+          "evidence": {
+            "command": "python3 cmp.py c2.json  (each command through `rail hook guard` with this change's engine and origin/main's, RAIL_CLOUD=0, cwd = ticket worktree; then bash -c with stub git). S/other is a scratch repository, R is /home/user/throw-away-repo.",
+            "output": "new=pass old=pass 'git push origin x \"\\n\" --force'  bash=['RAN: git push origin x ', ' --force [pwd=R/.claude/worktrees/9]']\nnew=pass old=pass 'cd () (true)\\ncd S/other && git push -f origin x'  bash=['RAN: git push -f origin x [pwd=R/.claude/worktrees/9]']\nnew=pass old=pass 'shopt -s expand_aliases\\nalias cd=true\\ncd S/other && git push -f origin x'  bash=['RAN: git push -f origin x [pwd=R/.claude/worktrees/9]']\nnew=pass old=pass 'cd S/other && 2>/dev/null cd R/ && git push -f origin x'  bash=['RAN: git push -f origin x [pwd=R]']\nnew=pass old=pass \"cd S/other && trap 'cd R/' DEBUG && git push -f origin x\"  bash=['RAN: git push -f origin x [pwd=R]']\nnew=pass old=pass \"trap 'git push -f origin x' EXIT\"  bash=['RAN: git push -f origin x [pwd=R/.claude/worktrees/9]']\nnew=pass old=pass 'cd S/other && git -c remote.origin.url=R/ push -f origin x'\nnew=pass old=pass 'cd S/other && git push -f --repo=R/ '"
+          },
+          "id": "F48"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 679,
+          "claim": "The `--owner` ask is still dodged when `rail` isn't the command's first word or the flag isn't literal: `python3 .rail/bin/rail answer 5 F1 declined why --owner` passes with no ask, and so would `O=--owner; rail answer 5 F1 declined why $O`. Main's engine and the permission rules don't catch these either. Likewise nothing stops an agent adding the `rail:go` label itself through `gh api .../issues/N/labels`, which the engine reads as the person's approval.",
+          "evidence": {
+            "command": "python3 cmp.py c1.json  (same comparison)",
+            "output": "new=ask old=pass 'rail answer 5 F1 declined why --owner'\nnew=pass old=pass 'python3 .rail/bin/rail answer 5 F1 declined why --owner'"
+          },
+          "id": "F49"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/forge.py",
+          "line": 195,
+          "claim": "Pull requests are keyed by head branch name alone, with no check that the head is in this repository, so on a public repository a fork's pull request from a branch named like an open ticket's (`10-slug`) becomes that ticket's pull request once it is the newest. Closing it makes the ticket read as dropped, and its comments reach the agent as the person's note. The same line is on main; read from the code, not run.",
+          "check": "A forge test where the newest pull request for a ticket's branch name has `head.repo.full_name` different from the project's repository, expecting it to be ignored.",
+          "id": "F50"
+        }
+      ]
+    }
+  ]
+}

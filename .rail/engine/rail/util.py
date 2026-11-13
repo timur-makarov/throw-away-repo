@@ -16,6 +16,33 @@ class RailError(Exception):
         self.code = code
 
 
+def cloud():
+    """Whether this is a Claude Code cloud session: a disposable VM nobody owns, where Rail may install what it
+    needs and the rules that protect a person's own machine don't apply. RAIL_CLOUD=1 or 0 overrides."""
+    forced = os.environ.get("RAIL_CLOUD")
+    if forced is not None:
+        return forced in ("1", "true")
+    return os.environ.get("CLAUDE_CODE_REMOTE") == "true"
+
+
+def disposable():
+    """A cloud session or a CI runner: a machine made for this run, where the project's provision command may run."""
+    return cloud() or os.environ.get("GITHUB_ACTIONS") == "true"
+
+
+def session_url():
+    """The cloud session's page, for a person who wants to open the conversation that worked a ticket."""
+    remote = os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID", "")
+    return f"https://claude.ai/code/session_{remote[4:]}" if remote.startswith("cse_") else None
+
+
+def minutes_since(text):
+    """Whole minutes since an ISO time; None when there is none."""
+    if not text:
+        return None
+    return max(0, int((datetime.datetime.now(datetime.timezone.utc) - parse_iso(text)).total_seconds() // 60))
+
+
 def now_iso():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -80,6 +107,9 @@ def globs_overlap(a, b):
     return globmatch(a, b) or globmatch(b, a)
 
 
+AFTER_SHELL = []  # called after every shell command: what the engine remembers about git and GitHub may be old
+
+
 def run_shell(command, cwd, env_extra=None, timeout=None, stdin=None):
     """Run a command through sh, with `stdin` as its input. Returns (exit code or None on timeout, output, ms)."""
     env = dict(os.environ)
@@ -99,6 +129,8 @@ def run_shell(command, cwd, env_extra=None, timeout=None, stdin=None):
         code = None
     if code != 0 and errors:  # with stdin, stderr is kept apart so stdout stays clean JSON
         output = (output or "") + errors
+    for forget in AFTER_SHELL:
+        forget()  # the command may have changed the repository, and time has passed on GitHub
     return code, output or "", int((time.monotonic() - start) * 1000)
 
 

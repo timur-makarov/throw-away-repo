@@ -25,8 +25,12 @@ the ticket's pull request `rail:needs-you`. One act continues any wait: the labe
 request, or `rail accept NN "note"`. The note, and any comments the person wrote on the pull request during
 the wait, go into the agent's next brief. A person can hold any ticket by adding `rail:needs-you` by hand.
 
+A pull request merged before its ticket shipped doesn't make the ticket `merged`. It counts as the
+person's approval: `rail next` records it, starts the branch again from the base, and opens a new pull
+request for the work.
+
 ## The journal
 
 `.rail/journal/` holds each ticket's evidence, written only by the engine and merged with the code:
 `NN-events.jsonl` (every step and decision), `NN-review.json` (the review runs) and `NN-advice.md`
-(consult's advice). Never edit it by hand.
+(consult's advice). Never edit it by hand. `rail docs journal` describes each file and event.

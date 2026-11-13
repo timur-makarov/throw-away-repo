@@ -1,4 +1,4 @@
-"""`rail init`: set a project up (plan, section 14). It never overwrites a file of the project's."""
+"""`rail init`: set a project up. It never overwrites a file of the project's."""
 
 import json
 import os
@@ -20,7 +20,9 @@ if sys.version_info < (3, 11):
     sys.stderr.write("rail needs Python 3.11 or newer (found %d.%d). On macOS: brew install python\\n" % sys.version_info[:2])
     sys.exit(2)
 
-sys.dont_write_bytecode = True  # no __pycache__ under .rail/engine to commit by mistake
+# Compiled engine files go to the home folder: no __pycache__ under .rail/engine to commit by mistake, and the
+# engine isn't compiled again on every call.
+sys.pycache_prefix = os.path.join(os.path.expanduser("~"), ".cache", "rail", "pycache")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "engine"))
 from rail.cli import main  # noqa: E402
 
@@ -33,6 +35,8 @@ Read the repository to learn its stack, then propose each of these to the person
    the whole project's checks: tests, lint, a secret scan over the branch's commits ($RAIL_BASE..HEAD; RAIL_BASE is
    set for every command) and, when a lockfile changes, a dependency scan for this stack. When no scanner is
    installed, ask the person which to install, or leave it out and say so. A monorepo makes verify affected-aware.
+   Also `provision`: the command that installs those tools, as root, on a cloud session's machine and on a CI
+   runner. It never runs on the person's own computer, where installing is theirs.
 2. ARCHITECTURE.md with a `## Areas` table: | Area | Paths | Holds |, one row per area. Paths are globs, separated
    by commas; Holds says what lives there in a bug reporter's words. Cover every directory at depth {depth}; hidden
    directories such as .rail and .claude need no row, and neither do files at the root. At most 150 lines.
@@ -47,6 +51,39 @@ step below. Then ask the person to make that commit.
 Then commit what rail init added together with these changes to {base}. With a remote, push a branch and open a
 pull request with `gh api` (gh pr doesn't work in cloud sessions); the person merges it.
 Finally run `rail doctor` and make the one-time settings it lists."""
+
+
+# In a cloud session the machine is nobody's own, and the person is usually away: the agent sets everything up and
+# the person confirms it once, by merging the pull request.
+INIT_TASK_CLOUD = """Rail is installed, and this project isn't set up for it yet: .rail/config.toml isn't on {base}.
+This is a cloud session: the machine is yours to change. Set the project up yourself; the person confirms it all at
+once by reading and merging one pull request. Read the repository to learn its stack, then:
+1. [commands] in .rail/config.toml:
+   - `verify`: the whole project's checks: tests, lint, a secret scan over the branch's commits ($RAIL_BASE..HEAD;
+     RAIL_BASE is set for every command) and, when a lockfile changes, a dependency scan for this stack. A monorepo
+     makes it affected-aware.
+   - `setup`: runs in each new ticket worktree (install dependencies).
+   - `provision`: installs, as root, what verify and setup need that this machine lacks: scanners, CLIs, services.
+     It runs once per cloud machine and on each CI runner. Install the tools now with the command you write there,
+     and run verify until it passes.
+2. ARCHITECTURE.md with a `## Areas` table: | Area | Paths | Holds |, one row per area. Paths are globs, separated
+   by commas; Holds says what lives there in a bug reporter's words. Cover every directory at depth {depth}; hidden
+   directories such as .rail and .claude need no row, and neither do files at the root. At most 150 lines.
+3. [risk_paths] in .rail/config.toml: keep the defaults, and add the paths a person should see changed
+   (auth, payments, infrastructure) to HIGH or MEDIUM.
+4. The [[rules]] in .rail/config.toml: keep, drop or add structure rules for this project.
+If the project already has its own agent workflow, hooks, guards, CI gates or repo map, leave them running and list
+them in the pull request for the person to decide: keep, merge or retire.
+Then commit what rail init added together with these changes to a new branch, push it, and open a pull request with
+`gh api` (gh pr doesn't work in cloud sessions). In its description say what you chose and why, and list what only
+the person can do, because a cloud session can't change a repository's settings:
+- merge this pull request;
+- import .rail/ruleset.json at Settings > Rules > Rulesets > New ruleset > Import a ruleset: it requires the
+  rail check and a pull request on {base}, and allows squash merges only;
+- in Settings > General > Pull Requests: allow squash merging with "Pull request title and description" as the
+  default message, and turn on "Automatically delete head branches".
+Finally run `rail doctor`. It prints the lines for the cloud environment's setup script: propose them with your
+environment tool, so the person approves them once and every later session starts ready."""
 
 
 def _write(path, text, mode=None):
@@ -129,6 +166,8 @@ def init(cwd):
         "config.toml": ".rail/config.toml",
         "tickets/TEMPLATE.md": ".rail/tickets/TEMPLATE.md",
         "rail.yml": ".github/workflows/rail.yml",
+        "ruleset.json": ".rail/ruleset.json",  # for the person to import in GitHub: a session can't set it. It
+                                               # names the default branch, so one file fits every repository
     }
     packs = os.path.join(FRAMEWORK, "packs")
     for name in sorted(os.listdir(packs)) if os.path.isdir(packs) else []:

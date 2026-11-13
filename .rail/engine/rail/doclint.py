@@ -1,4 +1,4 @@
-"""doc-lint (plan, section 13): ARCHITECTURE.md's ## Areas keeps matching the tree.
+"""doc-lint: ARCHITECTURE.md's ## Areas keeps matching the tree.
 
 It skips a project until ARCHITECTURE.md exists. Hidden directories, such as .rail and .claude, hold
 configuration rather than areas, so they need no row.
@@ -123,7 +123,7 @@ def links(project, ref):
 
 
 def directories(project, ref):
-    """A change that adds or removes a directory at [map] depth must update ARCHITECTURE.md (plan, section 13)."""
+    """A change that adds or removes a directory at [map] depth must update ARCHITECTURE.md."""
     def top(rev):
         return set(_mapped_dirs(project, _tracked(project, rev)))
 

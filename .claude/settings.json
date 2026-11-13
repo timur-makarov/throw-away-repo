@@ -26,11 +26,9 @@
       "Write(./.rail/journal/**)"
     ],
     "ask": [
-      "Bash(sudo *)",
-      "Bash(git reset --hard*)",
-      "Bash(git clean -f*)",
       "Bash(rail answer * --owner)",
-      "Bash(rail answer * --owner *)"
+      "Bash(rail answer * --owner *)",
+      "Bash(rail answer --owner *)"
     ],
     "allow": [
       "Bash(rail next *)",
@@ -45,7 +43,9 @@
       "Bash(rail intake *)",
       "Bash(rail sweep *)",
       "Bash(rail consult *)",
-      "Bash(gh run watch *)"
+      "Bash(gh run watch *)",
+      "Bash(rail save *)",
+      "Bash(rail provision *)"
     ]
   },
   "env": {
@@ -81,6 +81,26 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.rail/bin/rail hook notify"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -n \"$(find \"$HOME/.cache/rail/pulse/${CLAUDE_CODE_SESSION_ID:-any}\" -mmin -10 2>/dev/null)\" ] || \"$CLAUDE_PROJECT_DIR\"/.rail/bin/rail hook pulse"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.rail/bin/rail hook stop"
           }
         ]
       }

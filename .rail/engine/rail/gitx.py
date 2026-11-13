@@ -4,6 +4,7 @@ import os
 import subprocess
 import tempfile
 
+from . import util
 from .util import RailError
 
 _ENV = {"GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"}
@@ -16,7 +17,46 @@ class GitError(RailError):
         self.result = result
 
 
+# One command derives a ticket's state several times, and each derivation asks git the same questions. The answers
+# to questions about refs and objects are kept until something can have changed them: any other git command, or a
+# shell command. Questions about a working tree's files (status, a diff against the files) are always asked again.
+_READS = {"rev-parse", "for-each-ref", "log", "ls-tree", "merge-base", "symbolic-ref", "check-attr", "patch-id",
+          "remote", "cat-file"}
+_answers = {}
+
+
+def forget():
+    _answers.clear()
+
+
+util.AFTER_SHELL.append(forget)
+
+
+def _reads_only(args):
+    """Whether a git command only reads refs and objects, so its answer holds until the repository changes."""
+    sub = args[0] if args else ""
+    if sub in _READS:
+        return sub != "remote" or len(args) == 1
+    if sub == "config":
+        return "--get" in args
+    if sub == "worktree":
+        return args[1:2] == ["list"]
+    if sub == "diff":
+        return any("..." in a for a in args)  # between two refs; without them it reads the working tree's files
+    return False
+
+
 def git(args, cwd, check=True, input=None, env=None):
+    key = None
+    if _reads_only(args) and not env:
+        key = (tuple(args), cwd, input)
+        if key in _answers:
+            result = _answers[key]
+            if check and result.returncode != 0:
+                raise GitError(args, result)
+            return result
+    else:
+        forget()
     full_env = dict(os.environ)
     full_env.update(_ENV)
     full_env.update(env or {})
@@ -25,6 +65,8 @@ def git(args, cwd, check=True, input=None, env=None):
         ["git", "-c", "core.quotePath=false", *args], cwd=cwd, input=input, capture_output=True, text=True,
         env=full_env,
     )
+    if key is not None:
+        _answers[key] = result
     if check and result.returncode != 0:
         raise GitError(args, result)
     return result
@@ -48,6 +90,9 @@ def read_blobs(specs, cwd):
     """Read many 'ref:path' blobs in one call. Missing ones come back as None."""
     if not specs:
         return {}
+    key = ("cat-file --batch", tuple(specs), cwd)
+    if key in _answers:
+        return dict(_answers[key])
     result = subprocess.run(
         ["git", "cat-file", "--batch"], cwd=cwd, input="\n".join(specs).encode() + b"\n",
         capture_output=True, check=True,
@@ -63,6 +108,7 @@ def read_blobs(specs, cwd):
         size = int(header.split()[2])
         found[spec] = data[pos:pos + size].decode("utf-8", errors="replace")
         pos += size + 1
+    _answers[key] = dict(found)
     return found
 
 
@@ -106,10 +152,41 @@ def worktrees(cwd):
 
 
 def dirty(cwd, exclude=()):
-    """Uncommitted paths in a worktree, untracked files included."""
+    """Uncommitted paths in a worktree, untracked files included, as git names them (-z: no quoting, so a name
+    may hold a quote or an arrow). A staged rename is both of its names: the old one is a deletion."""
     spec = ["--", "."] + [f":(exclude){p}" for p in exclude]
-    lines = git(["status", "--porcelain", "--untracked-files=all", *spec], cwd).stdout.splitlines()
-    return [line[3:].split(" -> ")[-1].strip('"') for line in lines]
+    fields = git(["status", "--porcelain", "-z", "--untracked-files=all", *spec], cwd).stdout.split("\0")
+    paths, i = [], 0
+    while i < len(fields):
+        entry = fields[i]
+        i += 1
+        if len(entry) < 4:
+            continue
+        paths.append(entry[3:])
+        if "R" in entry[:2] or "C" in entry[:2]:  # the name it was renamed or copied from comes next
+            if i < len(fields) and fields[i]:
+                paths.append(fields[i])
+            i += 1
+    return paths
+
+
+def literal(paths):
+    """Paths as pathspecs that mean exactly these files, whatever characters their names hold."""
+    return [f":(literal){path}" for path in paths]
+
+
+def stage(cwd, paths):
+    """git add -A for these paths. Returns the ones among them a commit would now record.
+
+    A deletion that is staged already (git rm, the old name of a git mv) is passed over: it is on disk and in the
+    index no more, and git stops at a path it can't find. A file that was staged and then deleted leaves nothing
+    to record at all."""
+    tracked = set(git(["ls-files", "--cached", "-z", "--", *literal(paths)], cwd).stdout.split("\0"))
+    left = [p for p in paths if p in tracked or os.path.lexists(os.path.join(cwd, p))]
+    if left:
+        git(["add", "-A", "--", *literal(left)], cwd)
+    recorded = git(["diff", "--cached", "--name-only", "--no-renames", "-z", "HEAD", "--", *literal(paths)], cwd).stdout
+    return [path for path in recorded.split("\0") if path]
 
 
 def push(cwd, remote, refspec, force_with_lease=None):

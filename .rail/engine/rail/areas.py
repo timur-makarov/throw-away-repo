@@ -1,4 +1,4 @@
-"""`context`: the `## Areas` rows of ARCHITECTURE.md that match a scope, and a directory digest (plan, section 13)."""
+"""`context`: the `## Areas` rows of ARCHITECTURE.md that match a scope, and a directory digest."""
 
 import re
 from collections import Counter

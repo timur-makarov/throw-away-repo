@@ -1,4 +1,4 @@
-"""`forge`: the engine's only way to talk to GitHub, through `gh api` REST calls (plan, section 11).
+"""`forge`: the engine's only way to talk to GitHub, through `gh api` REST calls.
 
 `gh pr` and `gh issue` use GraphQL, which Claude Code cloud sessions block, so they are never used.
 """
@@ -7,13 +7,26 @@ import json
 import re
 import subprocess
 
-from . import gitx
+from . import gitx, util
 
 LABELS = {
     "rail": ("0e8a16", "Rail: an issue for rail intake to turn into a ticket"),
     "rail:go": ("1d76db", "Rail: a person approves or continues this ticket"),
     "rail:needs-you": ("d93f0b", "Rail: this ticket waits for a person"),
 }
+
+
+# What one Forge has read from GitHub holds until something can have changed it: a write of the engine's own (a
+# pull request, a label, a merge, a push), a fetch, or a shell command, during which CI may have finished.
+_epoch = 0
+
+
+def expire():
+    global _epoch
+    _epoch += 1
+
+
+util.AFTER_SHELL.append(expire)
 
 
 class ForgeError(Exception):
@@ -75,26 +88,22 @@ def log_tail(log, lines=60):
 
 
 def doctor_checks(project, repo):
-    """[(name, passed or None, detail)] for the GitHub side of the setup (plan, sections 11 and 14)."""
+    """[(name, passed or None, detail)] for the GitHub side of the setup."""
     found = []
     try:
         info = api("GET", f"repos/{repo}")
     except ForgeError as e:
         return [("gh", False, f"gh can't read {repo}: {e}. Log in with gh auth login")]
     found.append(("gh", True, f"gh reads {repo}"))
-    squash_only = (info.get("allow_squash_merge") and not info.get("allow_merge_commit")
-                   and not info.get("allow_rebase_merge"))
-    message = info.get("squash_merge_commit_title") == "PR_TITLE" and info.get("squash_merge_commit_message") == "PR_BODY"
-    found.append(("squash merging", bool(squash_only and message),
-                  "squash only, with the PR title and description" if squash_only and message else
-                  "in Settings > General > Pull Requests allow squash merging only, with 'Pull request title and "
-                  "description' as the default message"))
     base = project.base
-    contexts, plan_limit = set(), False
+    contexts, plan_limit, ruleset_squash = set(), False, False
     try:
         for rule in api("GET", f"repos/{repo}/rules/branches/{base}") or []:
+            parameters = rule.get("parameters") or {}
             if rule.get("type") == "required_status_checks":
-                contexts |= {c.get("context") for c in rule.get("parameters", {}).get("required_status_checks", [])}
+                contexts |= {c.get("context") for c in parameters.get("required_status_checks", [])}
+            elif rule.get("type") == "pull_request":
+                ruleset_squash = parameters.get("allowed_merge_methods") == ["squash"]
     except ForgeError as e:
         plan_limit = e.status == 403 and "Upgrade" in str(e)
     try:
@@ -103,6 +112,14 @@ def doctor_checks(project, repo):
         contexts |= {c.get("context") for c in protection.get("checks", [])}
     except ForgeError:
         pass
+    # Squash only: the repository's own setting, or the ruleset's allowed merge methods on the base branch.
+    squash_only = ruleset_squash or (info.get("allow_squash_merge") and not info.get("allow_merge_commit")
+                                     and not info.get("allow_rebase_merge"))
+    message = info.get("squash_merge_commit_title") == "PR_TITLE" and info.get("squash_merge_commit_message") == "PR_BODY"
+    found.append(("squash merging", bool(squash_only and message),
+                  "squash only, with the PR title and description" if squash_only and message else
+                  f"at https://github.com/{repo}/settings (General > Pull Requests) allow squash merging only (or let"
+                  " the ruleset do it), with 'Pull request title and description' as the default message"))
     if plan_limit and "rail" not in contexts:
         # Private repositories on GitHub's free plan have no rulesets or branch protection. The engine still merges
         # only on a green rail check, but nothing stops a person merging early.
@@ -111,7 +128,13 @@ def doctor_checks(project, repo):
     else:
         found.append(("required check", "rail" in contexts,
                       f"rail is required on {base}" if "rail" in contexts else
-                      f"make the rail check required on {base} (a ruleset or branch protection)"))
+                      f"make the rail check required on {base}: import .rail/ruleset.json at"
+                      f" https://github.com/{repo}/settings/rules (New ruleset > Import a ruleset). Only a person can:"
+                      " a cloud session can't change repository settings"))
+    deletes = bool(info.get("delete_branch_on_merge"))
+    found.append(("merged branches", deletes, "GitHub deletes a merged ticket's branch" if deletes else
+                  f"turn on \"Automatically delete head branches\" at https://github.com/{repo}/settings (General >"
+                  " Pull Requests): a cloud session can't delete branches, so merged ones would pile up"))
     try:
         names = {label["name"] for label in api("GET", f"repos/{repo}/labels?per_page=100") or []}
     except ForgeError as e:
@@ -136,22 +159,29 @@ def create_labels(repo):
 
 
 class Forge:
-    """The GitHub side of the tickets, read once per command (plan, sections 7, 10 and 11).
+    """The GitHub side of the tickets, read once per command.
 
     `ok` is False when there is no GitHub remote or the remote can't be reached; the steps that need the forge
     then report `unavailable`, and state comes from git and the journal alone.
     """
 
-    def __init__(self, project):
+    def __init__(self, project, earlier=None):
         self.project = project
         self.repo = github_repo(project) if project.remote else None
         self.ok = bool(self.repo) and project.online
+        self.epoch = _epoch
         self._pulls = None
         self._full = {}
         self._checks = {}
-        self._required = None
+        self._required = earlier._required if earlier else None  # the base branch's rules don't change mid-command
+
+    @property
+    def stale(self):
+        return self.epoch != _epoch
 
     def call(self, method, path, body=None):
+        if method != "GET":
+            expire()
         return api(method, f"repos/{self.repo}/{path}", body)
 
     # --- pull requests ----------------------------------------------------------
@@ -168,15 +198,29 @@ class Forge:
         return self._pulls
 
     def pr(self, branch):
+        """The newest pull request from a branch, as the list gives it: labels, head, title, merged_at."""
         if not self.ok or not branch:
             return None
-        pr = self.pulls().get(branch)
-        if pr and pr.get("state") == "open" and pr["number"] not in self._full:
+        return self.pulls().get(branch)
+
+    def merged_from(self, nn):
+        """The newest merged pull request from one of ticket NN's branches (NN-...), or None. A ticket whose branch
+        is gone shows by it that its own pull request was merged."""
+        if not self.ok:
+            return None
+        return next((pr for ref, pr in self.pulls().items() if ref.startswith(f"{nn}-") and pr.get("merged_at")), None)
+
+    def full(self, pr):
+        """An open pull request read on its own, for mergeable_state: the list doesn't carry it. One call per pull
+        request, so it is asked only for a shipped ticket, where a conflict or a base that moved matters."""
+        if not pr or pr.get("state") != "open":
+            return pr
+        if pr["number"] not in self._full:
             try:
                 self._full[pr["number"]] = self.call("GET", f"pulls/{pr['number']}")
             except ForgeError:
                 self._full[pr["number"]] = pr
-        return self._full.get(pr["number"], pr) if pr else None
+        return self._full[pr["number"]]
 
     def open_pr(self, branch, title, body):
         pr = self.call("POST", "pulls", {"title": title, "head": branch, "base": self.project.base, "body": body})
