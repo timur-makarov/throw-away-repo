@@ -986,6 +986,61 @@
       "cost_usd": 2.4596874000000004,
       "summary": "Ran all six Done Contract checks (all pass), diffed the vendored engine, pack, launcher, ruleset, workflow, template, AGENTS.md and settings against the framework at the commit in .rail/SOURCE (engine and pack identical; settings differ only in rule order), and ran the framework's 169 tests at that commit (pass). Put about 80 command lines through main's and the branch's guard in both cloud and local mode (no crash; the only new denies are the documented fail-closed cases), and checked the new verbs, flags and docs pages; the earlier findings marked fixed hold and I found nothing new to report.",
       "findings": []
+    },
+    {
+      "run": 31,
+      "role": "security",
+      "patch_id": "924d74c9b19f90a7d8db0915b3bf530625e45f8d",
+      "head": "43917ed7758f",
+      "tier": "HIGH",
+      "at": "2026-11-13T07:41:53Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.2319966000000004,
+      "summary": "Security seat, re-review of the whole change. I ran about 130 commands through `rail hook guard` with this change's engine and with origin/main's, and through real bash with stub git and gh: no command that main denies passes now, and the fixes for the earlier blocking findings (F10 to F45) hold in every shape I tried. One new advisory (a marker file turns the machine-level guard off) and three parked items; `python3 -m unittest` was not run, and F10 and the fork pull request item were checked by reading the code only.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/hooks.py",
+          "line": 54,
+          "claim": "The new machine-level guard steps aside for a project whenever the file `rail/cache/hooks/<session id>` exists in that repository's git directory, and that file is writable by any command the agent runs. In a session above several repositories, where the machine hooks are the only guard, `mkdir -p repo/.git/rail/cache/hooks && echo 1 > repo/.git/rail/cache/hooks/$CLAUDE_CODE_SESSION_ID` makes `cd repo && git push -f origin x` (and pushes to main, and merges) pass with no judgement for the rest of the session.",
+          "check": "A test that writes the marker by hand in a session whose repository hooks did not run, then expects `rail hook guard --machine` to still deny `cd repo && git push -f origin x`; or have the guard deny Bash writes into `rail/cache/hooks`.",
+          "evidence": {
+            "command": "scratch repo at $S/m/repo with this change's .rail; cd $S/m; printf '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cd repo && git push -f origin x\"},\"cwd\":\"'$S/m'\",\"session_id\":\"s1\"}' | RAIL_CLOUD=1 repo/.rail/bin/rail hook guard --machine; mkdir -p repo/.git/rail/cache/hooks && echo 1 > repo/.git/rail/cache/hooks/s1; (same hook call again)",
+            "output": "\"permissionDecision\": \"deny\"\npass"
+          },
+          "id": "F47"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 296,
+          "claim": "Several forms still run a denied command in this project and pass, on main's engine too: a `cd` the shell doesn't perform as the guard reads it (`cd () (true)` or `shopt -s expand_aliases; alias cd=true` on an earlier line, `2>/dev/null cd <repo> && ...`, `trap 'cd <repo>' DEBUG`), a command in a `trap ... EXIT`, a flag after an argument that spans lines (`git push origin x \"<newline>\" --force`), and from another repository `git -c remote.origin.url=<this repo> push -f origin x` or `git push -f --repo=<this repo>`.",
+          "evidence": {
+            "command": "python3 cmp.py c2.json  (each command through `rail hook guard` with this change's engine and origin/main's, RAIL_CLOUD=0, cwd = ticket worktree; then bash -c with stub git). S/other is a scratch repository, R is /home/user/throw-away-repo.",
+            "output": "new=pass old=pass 'git push origin x \"\\n\" --force'  bash=['RAN: git push origin x ', ' --force [pwd=R/.claude/worktrees/9]']\nnew=pass old=pass 'cd () (true)\\ncd S/other && git push -f origin x'  bash=['RAN: git push -f origin x [pwd=R/.claude/worktrees/9]']\nnew=pass old=pass 'shopt -s expand_aliases\\nalias cd=true\\ncd S/other && git push -f origin x'  bash=['RAN: git push -f origin x [pwd=R/.claude/worktrees/9]']\nnew=pass old=pass 'cd S/other && 2>/dev/null cd R/ && git push -f origin x'  bash=['RAN: git push -f origin x [pwd=R]']\nnew=pass old=pass \"cd S/other && trap 'cd R/' DEBUG && git push -f origin x\"  bash=['RAN: git push -f origin x [pwd=R]']\nnew=pass old=pass \"trap 'git push -f origin x' EXIT\"  bash=['RAN: git push -f origin x [pwd=R/.claude/worktrees/9]']\nnew=pass old=pass 'cd S/other && git -c remote.origin.url=R/ push -f origin x'\nnew=pass old=pass 'cd S/other && git push -f --repo=R/ '"
+          },
+          "id": "F48"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 679,
+          "claim": "The `--owner` ask is still dodged when `rail` isn't the command's first word or the flag isn't literal: `python3 .rail/bin/rail answer 5 F1 declined why --owner` passes with no ask, and so would `O=--owner; rail answer 5 F1 declined why $O`. Main's engine and the permission rules don't catch these either. Likewise nothing stops an agent adding the `rail:go` label itself through `gh api .../issues/N/labels`, which the engine reads as the person's approval.",
+          "evidence": {
+            "command": "python3 cmp.py c1.json  (same comparison)",
+            "output": "new=ask old=pass 'rail answer 5 F1 declined why --owner'\nnew=pass old=pass 'python3 .rail/bin/rail answer 5 F1 declined why --owner'"
+          },
+          "id": "F49"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/forge.py",
+          "line": 195,
+          "claim": "Pull requests are keyed by head branch name alone, with no check that the head is in this repository, so on a public repository a fork's pull request from a branch named like an open ticket's (`10-slug`) becomes that ticket's pull request once it is the newest. Closing it makes the ticket read as dropped, and its comments reach the agent as the person's note. The same line is on main; read from the code, not run.",
+          "check": "A forge test where the newest pull request for a ticket's branch name has `head.repo.full_name` different from the project's repository, expecting it to be ignored.",
+          "id": "F50"
+        }
+      ]
     }
   ]
 }
