@@ -48,13 +48,14 @@ believed only as a plain command in a flat chain: not behind a keyword or in bra
 ends. A `cd` on one line holds for the next line only when no line of the command can be text: with a
 here-document or a quote that runs over lines, it holds for its own line.
 
-A `gh` merge is another repository's only on proof that nothing can take back: `-R OWNER/NAME` or a pull
-request URL as an argument, and for `gh api` a merge path that names the repository itself
-(`repos/OWNER/NAME/pulls/N/merge`). `GH_REPO` is no such proof: a wrapper may unset it, and `gh api` reads it
-only to fill `{owner}/{repo}`. This project's name anywhere in the command makes it this project's, and so
-does a name the guard can't read. An exported `GIT_DIR` or `GH_REPO` only ever makes the guard stricter.
-From a folder above the repositories, a command the guard can't place is judged on the branch the
-project's own checkout is on.
+A `gh` merge is another repository's only on proof in an exact shape: for `gh pr merge`, `-R OWNER/NAME`
+or the pull request as `https://github.com/OWNER/NAME/pull/N`, spelled plainly and with every other word a
+known option; for `gh api`, a merge path that names the repository itself (`repos/OWNER/NAME/pulls/N/merge`).
+`GH_REPO` is no such proof: a wrapper may unset it, and `gh api` reads it only to fill `{owner}/{repo}`.
+This project's name anywhere in the command makes it this project's, and so does a name the guard can't
+read as `gh` will (a variable, `%2D`, a path by repository id). An exported `GIT_DIR` or `GH_REPO` only ever
+makes the guard stricter. From a folder above the repositories, a command the guard can't place is judged
+on the branch the project's own checkout is on.
 
 **It reads the command that runs.** A command after a shell keyword (`then git push -f`, `{ cd -; ... }`),
 behind a wrapper (`sudo -u root`, `env`, `timeout 60`, `xargs`, `nice`) or given by its path

@@ -33,6 +33,8 @@ def answer(ticket=None, state=None, owner="none", action=None, code="NO_WORK", s
 
 def from_facts(f, steps_=None, code=None, **extra):
     row_code, owner, action = first_match(f)
+    if owner == "human":
+        label_wait(f.project, f, row_code)  # the person's inbox is this label, whichever command met the wait
     cwd = "." if row_code == "MERGE" else f.cwd  # the merge removes the worktree, so it runs from the project's root
     return answer(f.id, f.state, owner, action, code or row_code, steps_, cwd, tier=f.tier, **extra)
 

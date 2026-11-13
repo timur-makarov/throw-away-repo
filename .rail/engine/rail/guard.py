@@ -474,19 +474,29 @@ def _gh_sub(words):
 
 
 REPO_NAME = r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"
+MERGE_PATH = r"pulls/\d+/(?:merge(?:-async)?|ccr/auto_merge)"
+# gh pr merge: its switches, and its options that take a value. An option the guard doesn't know may take the
+# next word as its value, so with one of those in the command no word is proof of anything.
+GH_MERGE_FLAGS = {"--squash", "--merge", "--rebase", "--auto", "--admin", "--delete-branch", "--disable-auto"}
+GH_MERGE_VALUED = {"-b", "--body", "-F", "--body-file", "-t", "--subject", "-A", "--author-email", "--match-head-commit"}
+
+
+def _merge_path(word):
+    """Whether a word of a `gh api` command has a merge in its path."""
+    return "/pulls/" in word and ("/merge" in word or "auto_merge" in word)
 
 
 def _gh_target(raw, words, repo):
-    """Whose repository a gh command is about: "ours", "other", or None when where it runs decides.
+    """Whose repository a gh merge is about: "ours", "other", or None when where it runs decides.
 
-    It is another repository's only on proof that nothing can take back:
-    - `gh pr merge` and the like: -R or --repo with another OWNER/NAME, or a pull request URL of another repository
-      as an argument, and every such word agrees;
-    - a merge through `gh api`: every word with a merge path names another repository in that path itself
-      (repos/OWNER/NAME/pulls/N/merge). A path by id, or for the current repository, proves nothing.
-    This project's name anywhere in the command makes it ours, and so does a name the guard can't read (a
-    variable). GH_REPO is no proof either way that the command is another's: a wrapper may unset it (env -u, env
-    -i), and `gh api` reads it only to fill {owner}/{repo}.
+    It is another repository's only on proof in one of a few exact shapes; anything else that names a repository
+    in a way the guard can't read makes the command this project's, wherever it runs:
+    - `gh pr merge`: -R or --repo with OWNER/NAME, or the pull request as https://github.com/OWNER/NAME/pull/N,
+      spelled plainly (gh decodes %2D and the like, the guard doesn't), with every other word a known option;
+    - a merge through `gh api`: every word with a merge path is exactly repos/OWNER/NAME/pulls/N/merge. A path for
+      the current repository ({owner}/{repo}) leaves it to where the command runs; a path by id is anyone's.
+    This project's name anywhere in the command makes it ours. GH_REPO proves nothing: a wrapper may unset it
+    (env -u, env -i), and `gh api` reads it only to fill {owner}/{repo}.
     """
     if not repo:
         return None  # this project's own name isn't known, so no name can be told from it
@@ -494,22 +504,46 @@ def _gh_target(raw, words, repo):
         return "ours"
     if any(w.startswith("GH_REPO=") and re.search(r"[$`]", w) for w in raw):
         return "ours"
-    if _gh_sub(words)[:1] == ["api"]:
-        merges = [w for w in words[2:] if "/pulls/" in w and "/merge" in w]
-        named = [re.match(rf"(?:https://api\.github\.com)?/?repos/({REPO_NAME})/pulls/\d+/merge", w) for w in merges]
-        return "other" if merges and all(named) else None
-    hints = []
-    for i, w in enumerate(words):
-        if w in ("-R", "--repo") and i + 1 < len(words):
-            hints.append(words[i + 1])
+    sub = _gh_sub(words)
+    if sub[:1] == ["api"]:
+        current = False
+        for w in (w for w in words[2:] if _merge_path(w)):
+            if re.fullmatch(rf"/?repos/(?:\{{owner\}}/\{{repo\}}|:owner/:repo)/{MERGE_PATH}", w):
+                current = True
+            elif not re.fullmatch(rf"(?:https://api\.github\.com)?/?repos/{REPO_NAME}/{MERGE_PATH}", w):
+                return "ours"  # by id, encoded, with a variable, or inside an option's value: nobody knows whose
+        return None if current or not any(_merge_path(w) for w in words[2:]) else "other"
+    if sub != ["pr", "merge"]:
+        return None
+    rest = list(words[1:])
+    for word in sub:
+        rest.remove(word)
+    hints, positional, known, i = [], [], True, 0
+    while i < len(rest):
+        w = rest[i]
+        if w in ("-R", "--repo"):
+            hints.append(rest[i + 1] if i + 1 < len(rest) else "")
+            i += 1
         elif w.startswith("--repo="):
             hints.append(w.split("=", 1)[1])
-        elif i > 1 and re.match(r"(?:https?://)?(?:www\.)?github\.com/", w) and not words[i - 1].startswith("-"):
-            hints.append(re.sub(r"^https?://", "", w))
+        elif w in GH_MERGE_VALUED:
+            i += 1
+        elif w.startswith("-"):
+            known = known and (w in GH_MERGE_FLAGS or bool(re.fullmatch(r"-[smrd]+", w))
+                               or w.split("=", 1)[0] in GH_MERGE_VALUED)
+        else:
+            positional.append(w)
+        i += 1
+    for word in positional:
+        url = re.fullmatch(rf"https://github\.com/({REPO_NAME})/pull/\d+", word)
+        if url:
+            hints.append(url.group(1))
+        elif "://" in word or "%" in word or re.search(r"[$`]", word):
+            return "ours"  # an address the guard can't read as gh will
     if not hints:
         return None
-    readable = all(not re.search(r"[$`]", hint) and _repo_name(hint) for hint in hints)
-    return "other" if readable else "ours"
+    plain = all(re.fullmatch(rf"(?:(?:https://)?github\.com/)?{REPO_NAME}", hint) for hint in hints)
+    return "other" if plain and known and len(positional) <= 1 else "ours"
 
 
 def deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
@@ -614,7 +648,7 @@ def _deny(line, base, branch, cwd=None, locate=None, repo=None, cloud=False):
                     continue  # it names none, and it runs in another repository
             if _gh_sub(words) == ["pr", "merge"]:
                 return "gh pr merge merges outside the engine: rail advance merges a shipped ticket"
-            if _gh_sub(words)[:1] == ["api"] and any("/merge" in w and "/pulls/" in w for w in words[2:]):
+            if _gh_sub(words)[:1] == ["api"] and any(_merge_path(w) for w in words[2:]):
                 return "a merge through gh api goes around the engine: rail advance merges a shipped ticket"
     return None
 

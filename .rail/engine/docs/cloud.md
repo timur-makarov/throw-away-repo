@@ -94,8 +94,9 @@ Claude Code loads a repository's hooks and permission rules only in a session th
 repository. A session with several repositories, and a thread in a project, load neither. So
 `rail provision` also writes the hooks into the machine's own settings, which every session loads:
 
-- the guard finds the project a command runs in (`cd repo && git push origin main` is still denied), and
-  the saves and the session's snapshot cover every Rail repository below the session's folder;
+- the guard finds the project a command runs in (`cd repo && git push origin main` is still denied), also
+  further down when the command names its folder; the saves and the session's snapshot cover every Rail
+  repository directly below the session's folder;
 - where the repository's own hooks did load, the machine's step aside, so nothing runs twice;
 - `rail` works everywhere, because provision linked it onto `PATH`;
 - the link and the hooks call the engine in the project's own checkout, so a ticket's copy of a newer

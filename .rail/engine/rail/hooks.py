@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sys
 import time
 
@@ -94,6 +95,26 @@ def session_start():
     return 0
 
 
+def _named(command, cwd, known, session):
+    """The Rail projects a command names by a folder, besides the known ones: a session may stand more than one
+    level above its repositories, and `cd work/repo && git push -f` is still about that repository."""
+    found = []
+    for word in sorted(set(re.findall(r"[^\s;&|()<>'\"`$=]+", command))):
+        path = os.path.join(cwd, os.path.expanduser(word))
+        if not os.path.isdir(path):
+            continue
+        try:
+            project = Project(path)
+        except RailError:
+            continue
+        project.session = session or project.session
+        if any(project.root == other.root for other in known + found):
+            continue
+        if not (project.session and project.cache_read("hooks", project.session)):  # its own hooks aren't on the job
+            found.append(project)
+    return found
+
+
 def guard():
     """PreToolUse on Bash: deny what a permission rule can't express."""
     from . import gitx, guard as rules
@@ -104,6 +125,8 @@ def guard():
     if data.get("tool_name", "Bash") != "Bash" or not command:
         return 0
     cwd, inside, projects = _projects(data)
+    if MACHINE and not inside:
+        projects += _named(command, cwd, projects, data.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID"))
     if not projects:
         return 0  # no Rail project here, or its own hooks are on the job
     branch = gitx.git(["rev-parse", "--abbrev-ref", "HEAD"], cwd, check=False).stdout.strip() if inside else ""
