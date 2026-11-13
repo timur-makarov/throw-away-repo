@@ -398,3 +398,4 @@
 {"v":1,"at":"2026-11-13T07:30:46Z","ticket":"9","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"924d74c9b19f90a7d8db0915b3bf530625e45f8d","detail":"test -f .rail/ruleset.json && ! grep -q \"Bash(sudo\" .claude/settings.json","duration_ms":3}
 {"v":1,"at":"2026-11-13T07:30:46Z","ticket":"9","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"924d74c9b19f90a7d8db0915b3bf530625e45f8d","detail":"python3 -m unittest discover -s tests -q","duration_ms":58}
 {"v":1,"at":"2026-11-13T07:30:46Z","ticket":"9","event":"shipped","patch_id":"924d74c9b19f90a7d8db0915b3bf530625e45f8d","head":"d1d80170b241","tier":"HIGH","size":2568}
+{"v":1,"at":"2026-11-13T07:37:12Z","ticket":"9","event":"step","step":"review","status":"ran","result":"pass","patch_id":"924d74c9b19f90a7d8db0915b3bf530625e45f8d","detail":"run 30: 0 blocking, 0 findings","duration_ms":383028,"cost_usd":2.4596874000000004}
