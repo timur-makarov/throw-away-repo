@@ -925,6 +925,55 @@
       "cost_usd": 2.6904161999999996,
       "summary": "Re-reviewed the whole change and found nothing new; no earlier finding still stands, and the one the author declined (F28) is now described as intended in docs/loop.md. All six Done Contract checks pass; the engine, pack, ruleset, workflow and ticket template are byte-identical to the framework at the commit in .rail/SOURCE (which is framework main), and the framework's own 168 tests pass on it. The only change since the last clean review (a command that sets PWD or HOME itself, and rail accept with rail:go already on the pull request) was probed through the guard hook in local and cloud mode, along with the PostToolUse throttle, with no wrong result.",
       "findings": []
+    },
+    {
+      "run": 29,
+      "role": "security",
+      "patch_id": "41a990ddb1c770a72b8a85265a47cb8ccf1e7f02",
+      "head": "87b96fc7c2e9",
+      "tier": "HIGH",
+      "at": "2026-11-13T07:23:24Z",
+      "model": "claude-fable-5-2",
+      "cost_usd": 3.3182188,
+      "summary": "Security seat, re-review of the whole change. I ran candidate commands through `rail hook guard` with this change's engine and with origin/main's (RAIL_CLOUD=0, cwd = the ticket worktree), and checked what `gh` 2.89 does with the same arguments using read-only `gh pr view` under GH_DEBUG=api. I also read the save, provision, claim, contract-merge and machine-hook paths. The earlier blocking findings I retried stay fixed; one new regression in the pull request URL rule is blocking.",
+      "findings": [
+        {
+          "severity": "blocking",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 506,
+          "claim": "A `github.com/...` argument of `gh pr merge` is taken as proof of another repository, but the guard compares the raw text while gh decodes it. `gh pr merge https://github.com/timur-makarov/throw%2Daway-repo/pull/5` passes and gh resolves it to this repository, so it merges this project's pull request; main's engine denies it. A scheme-less `gh pr merge github.com/o/x` also passes, and gh reads that as a head branch name in this repository. This is the F11/F32 class, and a merged unshipped pull request counts as the person's approval.",
+          "check": "In test_a_merge_is_judged_by_the_repository_it_names: a pull request URL of this repository with a percent-encoded character in owner or name, and a scheme-less github.com/OWNER/NAME argument, must be denied. A URL counts as another repository only when it has http(s)://, owner and name match [A-Za-z0-9._-]+ with no %, and the path is /pull/N.",
+          "evidence": {
+            "command": "python3 cmp.py c1.json c2.json  (each command through `rail hook guard` with this change's engine and origin/main's, RAIL_CLOUD=0, cwd = ticket worktree); GH_DEBUG=api gh pr view 'https://github.com/timur-makarov/throw%2Daway-repo/pull/11' --json number ; GH_DEBUG=api gh pr view 'github.com/o/x' --json number",
+            "output": "new=pass old=deny 'gh pr merge https://github.com/timur-makarov/throw%2Daway-repo/pull/5'\nnew=pass old=deny 'gh pr merge -b note https://github.com/timur-makarov/throw%2Daway-repo/pull/5'\nnew=pass old=deny 'gh pr merge https://github.com/timur-makarov/throw-away-rep%6f/pull/5 --squash --admin'\nnew=pass old=deny 'gh pr merge github.com/o/x'\nnew=pass old=deny 'gh pr merge www.github.com/o/x --squash'\ngh: query PullRequestByNumber ... GraphQL variables: {\"owner\":\"timur-makarov\",\"pr_number\":11,\"repo\":\"throw-away-repo\"}\ngh: query PullRequestForBranch ... GraphQL variables: {\"headRefName\":\"github.com/o/x\",\"owner\":\"timur-makarov\",\"repo\":\"throw-away-repo\",\"states\":null}"
+          },
+          "id": "F44"
+        },
+        {
+          "severity": "advisory",
+          "file": ".rail/engine/rail/hooks.py",
+          "line": 41,
+          "claim": "The new machine-level guard only looks for Rail projects directly below the session's folder. From a folder two levels above the repository (session in `m`, repository in `m/work/repo`), `cd work/repo && git push origin main` and `cd <abs path>/repo && git push -f origin x` pass with no judgement at all, while docs/cloud.md says the guard covers every Rail repository below the session's folder.",
+          "check": "A test of `rail hook guard --machine` with cwd two levels above a Rail repository: `cd a/repo && git push -f origin x` must be denied (resolve the projects from the directories the command names, not only from the children of cwd).",
+          "evidence": {
+            "command": "clone at $S/m/work/repo; printf '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"%s\"},\"cwd\":\"$S/m\",\"session_id\":\"s1\"}' \"$c\" | RAIL_CLOUD=1 $S/m/work/repo/.rail/bin/rail hook guard --machine   (and the same with cwd=$S/m/work)",
+            "output": "\"deny\"  cwd=m/work :: cd repo && git push origin main\npass    cwd=m :: cd work/repo && git push origin main\npass    cwd=m :: cd m/work/repo && git push -f origin x"
+          },
+          "id": "F45"
+        },
+        {
+          "severity": "parked",
+          "file": ".rail/engine/rail/guard.py",
+          "line": 498,
+          "claim": "Several `gh` forms still reach this project's pull request and pass, on main's engine as well: a `-R` or `--repo=` that gh consumes as another option's value (`gh pr merge 5 --body --repo=other/x`, `gh pr merge -t -R feature/x`), `-R https://github.com/timur-makarov/throw%2Daway-repo`, a merge by repository id run from another repository's folder (`cd /other && gh api -X PUT repositories/ID/pulls/5/merge`), and the cloud's auto-merge route (`gh api -X PUT repos/{owner}/{repo}/pulls/5/ccr/auto_merge`), which has no `/merge` in its path.",
+          "check": "Add these lines to the differential matrix in test_what_bash_really_runs_is_denied with a stub gh; treat `/ccr/auto_merge` as a merge path and a `repositories/ID/` merge path as this project's wherever it runs.",
+          "evidence": {
+            "command": "python3 cmp.py c1.json c2.json  (same comparison)",
+            "output": "new=pass old=pass 'gh pr merge 5 -R https://github.com/timur-makarov/throw%2Daway-repo'\nnew=pass old=pass 'gh pr merge -t -R feature/x'\nnew=pass old=pass 'gh pr merge 5 --body --repo=other/x'\nnew=pass old=pass 'cd S/other && gh api -X PUT repositories/123/pulls/5/merge'\nnew=pass old=pass 'gh api -X PUT repos/timur-makarov/throw-away-repo/pulls/5/ccr/auto_merge'\nnew=pass old=pass 'gh api -X PUT repos/{owner}/{repo}/pulls/5/ccr/auto_merge'"
+          },
+          "id": "F46"
+        }
+      ]
     }
   ]
 }
