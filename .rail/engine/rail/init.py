@@ -1,0 +1,249 @@
+"""`rail init`: set a project up. It never overwrites a file of the project's."""
+
+import json
+import os
+import shutil
+import stat
+
+from . import gitx
+from .util import RailError
+
+# The framework this engine came from: engine/rail/init.py -> the framework's root.
+FRAMEWORK = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
+LAUNCHER = '''#!/usr/bin/env python3
+"""This project's rail launcher: it runs the engine in ../engine. The SessionStart hook puts this folder on PATH."""
+import os
+import sys
+
+if sys.version_info < (3, 11):
+    sys.stderr.write("rail needs Python 3.11 or newer (found %d.%d). On macOS: brew install python\\n" % sys.version_info[:2])
+    sys.exit(2)
+
+# Compiled engine files go to the home folder: no __pycache__ under .rail/engine to commit by mistake, and the
+# engine isn't compiled again on every call.
+sys.pycache_prefix = os.path.join(os.path.expanduser("~"), ".cache", "rail", "pycache")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "engine"))
+from rail.cli import main  # noqa: E402
+
+sys.exit(main())
+'''
+
+INIT_TASK = """Rail is installed, and this project isn't set up for it yet: .rail/config.toml isn't on {base}.
+Read the repository to learn its stack, then propose each of these to the person and make the changes they confirm:
+1. [commands] in .rail/config.toml: `setup`, which runs in each new ticket worktree (install dependencies), and `verify`,
+   the whole project's checks: tests, lint, a secret scan over the branch's commits ($RAIL_BASE..HEAD; RAIL_BASE is
+   set for every command) and, when a lockfile changes, a dependency scan for this stack. When no scanner is
+   installed, ask the person which to install, or leave it out and say so. A monorepo makes verify affected-aware.
+   Also `provision`: the command that installs those tools, as root, on a cloud session's machine and on a CI
+   runner. It never runs on the person's own computer, where installing is theirs.
+2. ARCHITECTURE.md with a `## Areas` table: | Area | Paths | Holds |, one row per area. Paths are globs, separated
+   by commas; Holds says what lives there in a bug reporter's words. Cover every directory at depth {depth}; hidden
+   directories such as .rail and .claude need no row, and neither do files at the root. At most 150 lines.
+3. person_paths in .rail/config.toml: keep the defaults, and add the paths a person should see changed (auth,
+   payments, infrastructure): a ticket that touches one is PERSON, so a person approves its contract and merges
+   it. Every other ticket is AUTO and gets the reviewer before the engine merges it. [review] skip_paths lists
+   paths whose changes need no reviewer, such as docs; leave it empty when unsure.
+4. The [[rules]] in .rail/config.toml: keep, drop or add structure rules for this project.
+5. .worktreeinclude at the root: one glob per line for local files a ticket worktree needs that git doesn't
+   track, such as .env. Leave it out when there are none.
+If the project already has its own agent workflow, hooks, guards, CI gates or repo map, list them and ask the
+person whether to keep, merge or retire each one; until they decide, both run, and a hook of theirs may block a
+step below. Then ask the person to make that commit.
+Then commit what rail init added together with these changes to {base}. With a remote, push a branch and open a
+pull request with `gh api` (gh pr doesn't work in cloud sessions); the person merges it.
+Finally run `rail doctor` and make the one-time settings it lists."""
+
+
+# In a cloud session the machine is nobody's own, and the person is usually away: the agent sets everything up and
+# the person confirms it once, by merging the pull request.
+INIT_TASK_CLOUD = """Rail is installed, and this project isn't set up for it yet: .rail/config.toml isn't on {base}.
+This is a cloud session: the machine is yours to change. Set the project up yourself; the person confirms it all at
+once by reading and merging one pull request. Read the repository to learn its stack, then:
+1. [commands] in .rail/config.toml:
+   - `verify`: the whole project's checks: tests, lint, a secret scan over the branch's commits ($RAIL_BASE..HEAD;
+     RAIL_BASE is set for every command) and, when a lockfile changes, a dependency scan for this stack. A monorepo
+     makes it affected-aware.
+   - `setup`: runs in each new ticket worktree (install dependencies).
+   - `provision`: installs, as root, what verify and setup need that this machine lacks: scanners, CLIs, services.
+     It runs once per cloud machine and on each CI runner. Install the tools now with the command you write there,
+     and run verify until it passes.
+2. ARCHITECTURE.md with a `## Areas` table: | Area | Paths | Holds |, one row per area. Paths are globs, separated
+   by commas; Holds says what lives there in a bug reporter's words. Cover every directory at depth {depth}; hidden
+   directories such as .rail and .claude need no row, and neither do files at the root. At most 150 lines.
+3. person_paths in .rail/config.toml: keep the defaults, and add the paths a person should see changed (auth,
+   payments, infrastructure): a ticket that touches one is PERSON, so a person approves its contract and merges
+   it. Every other ticket is AUTO and gets the reviewer before the engine merges it. [review] skip_paths lists
+   paths whose changes need no reviewer, such as docs; leave it empty when unsure.
+4. The [[rules]] in .rail/config.toml: keep, drop or add structure rules for this project.
+If the project already has its own agent workflow, hooks, guards, CI gates or repo map, leave them running and list
+them in the pull request for the person to decide: keep, merge or retire.
+Then commit what rail init added together with these changes to a new branch, push it, and open a pull request with
+`gh api` (gh pr doesn't work in cloud sessions). In its description say what you chose and why, and list what only
+the person can do, because a cloud session can't change a repository's settings:
+- merge this pull request;
+- import .rail/ruleset.json at Settings > Rules > Rulesets > New ruleset > Import a ruleset: it requires the
+  rail check and a pull request on {base}, and allows squash merges only;
+- in Settings > General > Pull Requests: allow squash merging with "Pull request title and description" as the
+  default message, and turn on "Automatically delete head branches".
+Finally run `rail doctor`. It prints the lines for the cloud environment's setup script: propose them with your
+environment tool, so the person approves them once and every later session starts ready."""
+
+
+def _write(path, text, mode=None):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(text)
+    if mode:
+        os.chmod(path, mode)
+
+
+def _merge(project_value, ours):
+    """Add our settings to the project's. Existing values win; lists gain the items they lack."""
+    for key, value in ours.items():
+        if key not in project_value:
+            project_value[key] = value
+        elif isinstance(project_value[key], dict) and isinstance(value, dict):
+            _merge(project_value[key], value)
+        elif isinstance(project_value[key], list) and isinstance(value, list):
+            project_value[key] += [item for item in value if item not in project_value[key]]
+    return project_value
+
+
+def _base_branch(root):
+    """The remote's default branch; with no remote, the branch init runs on."""
+    head = gitx.git(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], root, check=False).stdout.strip()
+    if head:
+        return head.split("/", 1)[1]
+    # A clone made without origin/HEAD (cloud sessions make them): ask the remote, so a setup branch isn't taken for the base.
+    asked = gitx.git(["ls-remote", "--symref", "origin", "HEAD"], root, check=False).stdout
+    for line in asked.splitlines():
+        if line.startswith("ref: refs/heads/") and line.endswith("\tHEAD"):
+            return line[len("ref: refs/heads/"):-len("\tHEAD")]
+    current = gitx.git(["symbolic-ref", "--quiet", "--short", "HEAD"], root, check=False).stdout.strip()
+    return current or "main"
+
+
+def init(cwd):
+    """Returns the receipts: one step per thing init adds, `not_run` when the project already has it."""
+    seed = os.path.join(FRAMEWORK, "seed")
+    if not os.path.isdir(seed):
+        raise RailError("rail init runs from the framework: use the rail that install put on PATH")
+    top = gitx.git(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd, check=False)
+    if top.returncode != 0:
+        raise RailError("not inside a git repository: run git init first", code="NOT_A_PROJECT")
+    common = top.stdout.strip()
+    root = os.path.dirname(common) if os.path.basename(common) == ".git" else gitx.out(["rev-parse", "--show-toplevel"], cwd)
+    receipts = []
+
+    def step(name, done, detail):
+        receipt = {"step": name, "status": "ran" if done else "not_run", "detail": detail}
+        if done:
+            receipt["result"] = "pass"
+        receipts.append(receipt)
+
+    rail_dir = os.path.join(root, ".rail")
+    engine = os.path.join(rail_dir, "engine")
+    if os.path.exists(engine):
+        step("engine", False, ".rail/engine is there already; it is the project's")
+    else:
+        shutil.copytree(os.path.join(FRAMEWORK, "engine"), engine, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        step("engine", True, "copied to .rail/engine")
+
+    launcher = os.path.join(rail_dir, "bin", "rail")
+    if os.path.exists(launcher):
+        step("launcher", False, ".rail/bin/rail is there already")
+    else:
+        _write(launcher, LAUNCHER, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+        step("launcher", True, "wrote .rail/bin/rail")
+
+    source = os.path.join(rail_dir, "SOURCE")
+    if os.path.exists(source):
+        step("source", False, ".rail/SOURCE is there already")
+    else:
+        url = gitx.git(["remote", "get-url", "origin"], FRAMEWORK, check=False).stdout.strip() or FRAMEWORK
+        commit = gitx.git(["rev-parse", "HEAD"], FRAMEWORK, check=False).stdout.strip()
+        _write(source, f'url = "{url}"\ncommit = "{commit}"\n')
+        step("source", True, f"framework {url} at {commit[:12]}")
+
+    copies = {
+        "config.toml": ".rail/config.toml",
+        "tickets/TEMPLATE.md": ".rail/tickets/TEMPLATE.md",
+        "rail.yml": ".github/workflows/rail.yml",
+        "sources/weekly-review.md": ".rail/sources/weekly-review.md",  # a source: the week's merges read together
+        "ruleset.json": ".rail/ruleset.json",  # for the person to import in GitHub: a session can't set it. It
+                                               # names the default branch, so one file fits every repository
+    }
+    # The skills, as Claude Code skills: the grilling, and the pages [guides] names in the briefs.
+    skills = os.path.join(seed, "skills")
+    for name in sorted(os.listdir(skills)):
+        if os.path.isfile(os.path.join(skills, name, "SKILL.md")):
+            copies[f"skills/{name}/SKILL.md"] = f".claude/skills/{name}/SKILL.md"
+    packs = os.path.join(FRAMEWORK, "packs")
+    for name in sorted(os.listdir(packs)) if os.path.isdir(packs) else []:
+        dest = os.path.join(rail_dir, "packs", name)
+        if os.path.exists(dest):
+            step(f"pack {name}", False, f".rail/packs/{name} is there already")
+        else:
+            shutil.copytree(os.path.join(packs, name), dest, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            step(f"pack {name}", True, f"copied to .rail/packs/{name}")
+    for src, dest in copies.items():
+        target = os.path.join(root, dest)
+        if os.path.exists(target):
+            step(dest, False, "the project has it already")
+            continue
+        with open(os.path.join(seed, src)) as f:
+            text = f.read()
+        if src == "config.toml":
+            text = text.replace('base_branch = "main"', f'base_branch = "{_base_branch(root)}"', 1)
+        _write(target, text)
+        step(dest, True, "added")
+
+    agents = os.path.join(root, "AGENTS.md")
+    existing = open(agents).read() if os.path.exists(agents) else ""
+    if any(line.strip() == "## Rail" for line in existing.splitlines()):
+        step("AGENTS.md", False, "it has a ## Rail section already")
+    else:
+        with open(os.path.join(seed, "AGENTS.md")) as f:
+            section = f.read()
+        _write(agents, (existing.rstrip("\n") + "\n\n" if existing.strip() else "") + section)
+        step("AGENTS.md", True, "added the ## Rail section")
+
+    claude_md = os.path.join(root, "CLAUDE.md")
+    if not os.path.exists(claude_md):
+        step("CLAUDE.md", False, "the project has none, and Rail never creates one")
+    else:
+        text = open(claude_md).read()
+        if "@AGENTS.md" in text:
+            step("CLAUDE.md", False, "it imports AGENTS.md already")
+        else:
+            _write(claude_md, text.rstrip("\n") + "\n\n@AGENTS.md\n")
+            step("CLAUDE.md", True, "added @AGENTS.md, so Claude Code reads AGENTS.md too")
+
+    settings = os.path.join(root, ".claude", "settings.json")
+    with open(os.path.join(seed, "settings.json")) as f:
+        ours = json.load(f)
+    try:
+        theirs = json.load(open(settings)) if os.path.exists(settings) else {}
+    except ValueError:
+        theirs = None
+    if theirs is None:
+        step(".claude/settings.json", False, "not valid JSON, so left alone; merge seed/settings.json by hand")
+    else:
+        merged = _merge(json.loads(json.dumps(theirs)), ours)
+        if merged == theirs:
+            step(".claude/settings.json", False, "it has Rail's settings already")
+        else:
+            _write(settings, json.dumps(merged, indent=2) + "\n")
+            step(".claude/settings.json", True, "merged hooks, permissions, sandbox and Bash timeouts")
+
+    gitignore = os.path.join(root, ".gitignore")
+    lines = open(gitignore).read().splitlines() if os.path.exists(gitignore) else []
+    with open(os.path.join(seed, "gitignore")) as f:
+        missing = [l for l in f.read().splitlines() if l and l not in lines]
+    if missing:
+        _write(gitignore, "\n".join(lines + missing) + "\n")
+        step(".gitignore", True, f"added {', '.join(missing)}")
+    else:
+        step(".gitignore", False, "it has Rail's lines already")
+    return root, receipts
