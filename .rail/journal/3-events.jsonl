@@ -12,3 +12,4 @@
 {"v":1,"at":"2026-11-19T03:27:48Z","ticket":"3","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"d199bf60d172f20033b2b04c51aed89fae3b288b","detail":"grep -q '\"status\": 404, \"error\": \"no such order\"' docs/api.md","duration_ms":3}
 {"v":1,"at":"2026-11-19T03:27:48Z","ticket":"3","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"d199bf60d172f20033b2b04c51aed89fae3b288b","detail":"grep -qi 'error' docs/api.md && grep -q '\"error\": \"' docs/api.md","duration_ms":5}
 {"v":1,"at":"2026-11-19T03:27:48Z","ticket":"3","event":"shipped","patch_id":"d199bf60d172f20033b2b04c51aed89fae3b288b","head":"73938359f26b","tier":"AUTO","size":9}
+{"v":1,"at":"2026-11-19T06:21:51Z","ticket":"3","event":"continued","via":"accept","note":"Person released the hold in chat; label was still on the PR"}
