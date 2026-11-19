@@ -1,1 +1,2 @@
 {"v":1,"at":"2026-11-19T03:21:35Z","ticket":"6","event":"requested","via":"intake","channel":"github","grilled":false,"assumed":0,"external_id":"github#16","filed_by":"timur-makarov"}
+{"v":1,"at":"2026-11-19T06:10:53Z","ticket":"6","event":"accepted","by":"person","via":"label","tier":"PERSON","contract":"70c8c0fb65e4","done":"82dc1bb2354a","scope_paths":["shop/api.py","shop/store.py","tests/test_products.py"]}
