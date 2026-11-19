@@ -76,3 +76,46 @@ class UpdateCustomer(unittest.TestCase):
 
     def test_update_customer_missing_is_a_404(self):
         self.assertEqual(api.update_customer({"id": 9, "name": "A", "email": "a@b.co"})["status"], 404)
+
+
+class DeleteCustomer(unittest.TestCase):
+    def setUp(self):
+        store.reset()
+        store.save_customer({"id": 1, "name": "Ann", "email": "ann@example.com"})
+
+    def test_delete_customer_admin_removes_it(self):
+        self.assertEqual(api.delete_customer({"id": 1, "role": "admin"}), {"status": 200})
+        self.assertEqual(store.list_customers(), [])
+
+    def test_delete_customer_non_admin_is_403_and_keeps_it(self):
+        for request in ({"id": 1, "role": "clerk"}, {"id": 1, "role": "viewer"}, {"id": 1}):
+            answer = api.delete_customer(request)
+            self.assertEqual(answer["status"], 403, request)
+            self.assertIn("error", answer)
+        self.assertEqual(len(store.list_customers()), 1)
+
+    def test_delete_customer_non_admin_is_403_even_when_missing(self):
+        self.assertEqual(api.delete_customer({"id": 99, "role": "clerk"})["status"], 403)
+
+    def test_delete_customer_missing_is_404(self):
+        self.assertEqual(api.delete_customer({"id": 99, "role": "admin"}),
+                         {"status": 404, "error": "no such customer"})
+
+    def test_delete_customer_bad_id_is_404(self):
+        for bad in (None, "1", 1.0, True, [1]):
+            self.assertEqual(api.delete_customer({"id": bad, "role": "admin"})["status"], 404, bad)
+        self.assertEqual(api.delete_customer({"role": "admin"})["status"], 404)
+        self.assertEqual(len(store.list_customers()), 1)
+
+    def test_delete_customer_with_orders_is_409_and_keeps_it(self):
+        store.save_order({"id": 5, "customer_id": 1, "lines": []})
+        answer = api.delete_customer({"id": 1, "role": "admin"})
+        self.assertEqual(answer["status"], 409)
+        self.assertIn("error", answer)
+        self.assertEqual(len(store.list_customers()), 1)
+
+    def test_delete_customer_ignores_orders_of_others_or_of_nobody(self):
+        store.save_order({"id": 5, "customer_id": 2, "lines": []})
+        store.save_order({"id": 6, "lines": []})
+        self.assertEqual(api.delete_customer({"id": 1, "role": "admin"}), {"status": 200})
+        self.assertEqual(store.list_customers(), [])

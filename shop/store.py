@@ -55,3 +55,8 @@ def save_code(code, percent):
 
 def get_code(code):
     return _CODES.get(code)
+
+
+def delete_customer(customer_id):
+    """Remove a stored customer. Return False when there is no such customer."""
+    return _CUSTOMERS.pop(customer_id, None) is not None
