@@ -1,0 +1,18 @@
+{
+  "schema": "review/v1",
+  "ticket": "5",
+  "runs": [
+    {
+      "run": 1,
+      "role": "review",
+      "patch_id": "79983a66195ea72ea0b99e5c9cf44319ee997e5c",
+      "head": "f16fdcb64357",
+      "tier": "PERSON",
+      "at": "2026-11-19T06:31:05Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.0284574,
+      "summary": "I ran the full test suite (27 passed) and compared the diff with the Done Contract. The test names match both `-k` filters, and the migration's `status ... 'open'` line satisfies the grep check. The `order` test helper exists. The migration follows the 0002 convention (in-file `-- down` section, commented). The default is applied on read in `summary`. I found no problems.",
+      "findings": []
+    }
+  ]
+}
