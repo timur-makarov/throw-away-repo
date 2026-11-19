@@ -64,3 +64,22 @@ def test_header_helper_writes_the_header_row_first():
     out, writer = export._writer(["a", "b"])
     writer.writerow([1, 2])
     assert out.getvalue() == "a,b\r\n1,2\r\n"
+
+
+def test_products_csv_with_no_products_is_just_the_header():
+    store.reset()
+    assert export.products_csv() == "id,name,cents\r\n"
+
+
+def test_products_csv_has_one_row_per_product_in_id_order():
+    store.reset()
+    store.save_product({"id": 2, "name": "Cake", "cents": 450})
+    store.save_product({"id": 1, "name": "Tea", "cents": 300})
+    assert export.products_csv().splitlines() == ["id,name,cents", "1,Tea,300", "2,Cake,450"]
+
+
+def test_products_csv_prefixes_formula_names():
+    store.reset()
+    store.save_product({"id": 1, "name": "=SUM(A1)", "cents": 100})
+    rows = list(csv.reader(io.StringIO(export.products_csv())))
+    assert rows[1] == ["1", "'=SUM(A1)", "100"]
