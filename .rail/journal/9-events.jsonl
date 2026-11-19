@@ -12,3 +12,15 @@
 {"v":1,"at":"2026-11-19T08:07:53Z","ticket":"9","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":""}
 {"v":1,"at":"2026-11-19T08:07:53Z","ticket":"9","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"","detail":"exit 0","duration_ms":553}
 {"v":1,"at":"2026-11-19T08:07:53Z","ticket":"9","event":"step","step":"checks","status":"ran","result":"fail","patch_id":"","detail":"python3 -m pytest -q tests/test_products.py -k rename: exit 5","duration_ms":156,"signature":"checks:476e06adc743"}
+{"v":1,"at":"2026-11-19T08:08:31Z","ticket":"9","event":"step","step":"rebase","status":"ran","result":"pass","patch_id":"a882660ca3c17dbd8edef5616bd09f7647a07e56","detail":"onto main"}
+{"v":1,"at":"2026-11-19T08:08:31Z","ticket":"9","event":"step","step":"ticket-lint","status":"ran","result":"pass","patch_id":"a882660ca3c17dbd8edef5616bd09f7647a07e56"}
+{"v":1,"at":"2026-11-19T08:08:31Z","ticket":"9","event":"step","step":"assumptions","status":"ran","result":"pass","patch_id":"a882660ca3c17dbd8edef5616bd09f7647a07e56"}
+{"v":1,"at":"2026-11-19T08:08:31Z","ticket":"9","event":"step","step":"scope","status":"ran","result":"pass","patch_id":"a882660ca3c17dbd8edef5616bd09f7647a07e56"}
+{"v":1,"at":"2026-11-19T08:08:31Z","ticket":"9","event":"step","step":"rules","status":"ran","result":"pass","patch_id":"a882660ca3c17dbd8edef5616bd09f7647a07e56"}
+{"v":1,"at":"2026-11-19T08:08:31Z","ticket":"9","event":"step","step":"size","status":"ran","result":"pass","patch_id":"a882660ca3c17dbd8edef5616bd09f7647a07e56","detail":"size 74"}
+{"v":1,"at":"2026-11-19T08:08:31Z","ticket":"9","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":"a882660ca3c17dbd8edef5616bd09f7647a07e56"}
+{"v":1,"at":"2026-11-19T08:08:32Z","ticket":"9","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"a882660ca3c17dbd8edef5616bd09f7647a07e56","detail":"exit 0","duration_ms":532}
+{"v":1,"at":"2026-11-19T08:08:32Z","ticket":"9","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"a882660ca3c17dbd8edef5616bd09f7647a07e56","detail":"python3 -m pytest -q tests/test_products.py -k rename","duration_ms":172}
+{"v":1,"at":"2026-11-19T08:08:32Z","ticket":"9","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"a882660ca3c17dbd8edef5616bd09f7647a07e56","detail":"python3 -m pytest -q tests/test_auth.py","duration_ms":172}
+{"v":1,"at":"2026-11-19T08:08:32Z","ticket":"9","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"a882660ca3c17dbd8edef5616bd09f7647a07e56","detail":"python3 -m pytest -q && ruff check .","duration_ms":202}
+{"v":1,"at":"2026-11-19T08:08:32Z","ticket":"9","event":"shipped","patch_id":"a882660ca3c17dbd8edef5616bd09f7647a07e56","head":"3f3700d8d56f","tier":"PERSON","size":74}
