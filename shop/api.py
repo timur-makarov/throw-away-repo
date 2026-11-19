@@ -28,7 +28,7 @@ def delete_product(request):
     if not auth.allowed(request, "delete"):
         return {"status": 403, "error": "not allowed"}
     product_id = request.get("id")
-    if not isinstance(product_id, int) or not store.delete_product(product_id):
+    if type(product_id) is not int or not store.delete_product(product_id):
         return {"status": 404, "error": "no such product"}
     return {"status": 200}
 

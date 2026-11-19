@@ -36,6 +36,6 @@ def test_delete_product_missing_is_404():
 
 
 def test_delete_product_missing_is_404_for_a_bad_id_too():
-    for bad in (None, "1", [1]):
+    for bad in (None, "1", [1], True):
         _two_products()
         assert api.delete_product({"id": bad, "role": "admin"})["status"] == 404
