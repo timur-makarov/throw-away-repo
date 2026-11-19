@@ -12,6 +12,10 @@ Each handler takes a request dict and returns a dict with a `status`.
 | `api.get_customer` | `{"id": 1}` | `{"status": 200, "customer": {"id", "name", "email"}}` or a 404 |
 | `api.update_customer` | `{"id": 1, "name", "email"}` | `{"status": 200, "customer": {...}}` with `name` and `email` replaced together and the id kept; a 400 with `error` when either is invalid (nothing changes), or a 404 |
 
+## Who may call
+
+Who may call `api.create_customer`, `api.get_customer` and `api.update_customer`: any caller. These handlers make no role check and ignore `request["role"]`; only `api.delete_product` asks `shop/auth.py`.
+
 `export.orders_csv()` returns every order as CSV with the columns `id`, `customer_id`, `lines` and `total`: `customer_id` is empty when the order has none, `lines` is the number of lines, and `total` is in integer cents. With no orders it still returns the header row.
 
 ## Error answers
