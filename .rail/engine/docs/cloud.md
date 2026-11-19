@@ -78,8 +78,8 @@ Make one scheduled task for the repository, on the environment from step 4, with
     2. If `action.kind` is `agent_task`: give the brief to a subagent. Use the subagent already working this
        ticket if there is one and `action.model` has not changed; otherwise start one on `action.model` and
        effort. Give it `action.brief` word for word. Tell it to work in `cwd`, not to run `rail advance`, and
-       to reply in one line: done, or what stopped it. When it replies, run `rail advance --json` for that
-       ticket. If that answer is another `agent_task` for the same ticket, do this step again with it.
+       to reply in one line: done, or what stopped it. When it replies, run `rail advance NN --json`, where
+       NN is that ticket's number. If that answer is another `agent_task` for the same ticket, do this step again with it.
     3. If `action.kind` is `script`: run `action.command`.
     4. After any other answer from `rail advance`, go back to step 1.
     5. Stop only when `rail next` itself answers that only a person can act or that there is no work.
