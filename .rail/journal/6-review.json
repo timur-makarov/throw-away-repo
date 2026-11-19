@@ -1,0 +1,27 @@
+{
+  "schema": "review/v1",
+  "ticket": "6",
+  "runs": [
+    {
+      "run": 1,
+      "role": "review",
+      "patch_id": "e81f70c66069c3dfc2ab51c828bf83bb7f2578bf",
+      "head": "6514690931d7",
+      "tier": "PERSON",
+      "at": "2026-11-19T06:12:07Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.0286673,
+      "summary": "I read the diff and shop/auth.py, then ran tests/test_products.py (5 passed) and ruff (clean). The three Done Contract checks are met. The 403-before-404 order and the unchanged auth.py match the ticket.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": "shop/api.py",
+          "line": 30,
+          "claim": "`isinstance(product_id, int)` also accepts booleans, because `bool` is a subclass of `int`. A request `{\"id\": True, \"role\": \"admin\"}` therefore deletes product 1 instead of answering 404. No test covers it.",
+          "check": "Add `True` to the bad-id loop in test_delete_product_missing_is_404_for_a_bad_id_too, and reject bool in the handler.",
+          "id": "F1"
+        }
+      ]
+    }
+  ]
+}
