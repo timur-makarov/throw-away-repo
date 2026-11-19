@@ -1,0 +1,18 @@
+{
+  "schema": "review/v1",
+  "ticket": "19",
+  "runs": [
+    {
+      "run": 1,
+      "role": "review",
+      "patch_id": "0b3a6b98190e7235b88bf83cc8dde1895bd63d71",
+      "head": "ad3a5f2f8905",
+      "tier": "PERSON",
+      "at": "2026-11-19T13:05:27Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.0539481,
+      "summary": "Read the diff against store.py, auth.py and _find_customer, then ran the full test suite (52 passed) and ruff (clean). The behaviour matches the Done Contract: 403 is checked first, bad or missing ids give 404, orders give 409, and the check uses order.get(\"customer_id\"). The tests cover each case in the contract.",
+      "findings": []
+    }
+  ]
+}
