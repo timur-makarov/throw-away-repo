@@ -58,3 +58,9 @@ def test_customers_csv_neutralizes_formula_names(monkeypatch):
     rows = list(csv.reader(io.StringIO(export.customers_csv())))
     assert rows[1][1] == "'=HYPERLINK(\"x\")"
     assert rows[2][1] == "'@a"
+
+
+def test_header_helper_writes_the_header_row_first():
+    out, writer = export._writer(["a", "b"])
+    writer.writerow([1, 2])
+    assert out.getvalue() == "a,b\r\n1,2\r\n"
