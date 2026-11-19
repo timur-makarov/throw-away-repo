@@ -144,6 +144,8 @@ The source only files tickets. The runner above picks them up on its own schedul
   the agent as your note. Don't merge a contract pull request: it holds only the contract. If you do, Rail
   takes it as your approval and opens a new pull request for the work.
 - **Change a contract:** comment on its pull request. **Reject it:** close the pull request.
+- **Stop a ticket:** add the label `rail:hold` to its pull request. Nothing moves it until you add `rail:go`.
+  `rail:needs-you` is the engine's own label: adding or removing it by hand changes nothing.
 - **Merge a PERSON ticket:** the merge button.
 - Each pull request ends with `Claude-Session:` and a link to the session that worked the ticket.
 
