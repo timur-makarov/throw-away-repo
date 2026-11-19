@@ -2,3 +2,4 @@
 {"v":1,"at":"2026-11-19T13:21:27Z","ticket":"25","event":"accepted","by":"engine","via":"lint","tier":"AUTO","contract":"d629cb6859c5","done":"a0bac389f806","scope_paths":[".rail/journal/**"]}
 {"v":1,"at":"2026-11-19T13:21:32Z","ticket":"25","event":"claimed","session":"24ee0f8f-d3b7-5b78-b2b8-f2b7c5fa003e","takeover":false,"session_url":"https://claude.ai/code/session_01QmWTTBGGjxd3bNgYLhRqpp"}
 {"v":1,"at":"2026-11-19T13:21:33Z","ticket":"25","event":"base_checks","base":"85bbf2ab00de","checks":[{"command":"test -s .rail/journal/$RAIL_TICKET-summary.md","result":"red"}]}
+{"v":1,"at":"2026-11-19T13:21:47Z","ticket":"25","event":"step","step":"sweep","status":"ran","result":"pass","patch_id":"","detail":"run 1: 0 blocking, 1 findings","duration_ms":8434,"cost_usd":0.2539061}
