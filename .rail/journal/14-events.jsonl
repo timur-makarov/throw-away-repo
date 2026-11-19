@@ -11,3 +11,14 @@
 {"v":1,"at":"2026-11-19T08:18:02Z","ticket":"14","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":""}
 {"v":1,"at":"2026-11-19T08:18:03Z","ticket":"14","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"","detail":"exit 0","duration_ms":835}
 {"v":1,"at":"2026-11-19T08:18:03Z","ticket":"14","event":"step","step":"checks","status":"ran","result":"fail","patch_id":"","detail":"python3 -m pytest -q tests/test_export.py -k no_orders: exit 5","duration_ms":212,"signature":"checks:2146fadca65f"}
+{"v":1,"at":"2026-11-19T08:18:31Z","ticket":"14","event":"step","step":"ticket-lint","status":"ran","result":"pass","patch_id":"f4bb74e0cb76129d55d71d9b9812bb3eca59d914"}
+{"v":1,"at":"2026-11-19T08:18:31Z","ticket":"14","event":"step","step":"assumptions","status":"ran","result":"pass","patch_id":"f4bb74e0cb76129d55d71d9b9812bb3eca59d914"}
+{"v":1,"at":"2026-11-19T08:18:31Z","ticket":"14","event":"step","step":"scope","status":"ran","result":"pass","patch_id":"f4bb74e0cb76129d55d71d9b9812bb3eca59d914"}
+{"v":1,"at":"2026-11-19T08:18:31Z","ticket":"14","event":"step","step":"rules","status":"ran","result":"pass","patch_id":"f4bb74e0cb76129d55d71d9b9812bb3eca59d914"}
+{"v":1,"at":"2026-11-19T08:18:31Z","ticket":"14","event":"step","step":"size","status":"ran","result":"pass","patch_id":"f4bb74e0cb76129d55d71d9b9812bb3eca59d914","detail":"size 2/600"}
+{"v":1,"at":"2026-11-19T08:18:31Z","ticket":"14","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":"f4bb74e0cb76129d55d71d9b9812bb3eca59d914"}
+{"v":1,"at":"2026-11-19T08:18:32Z","ticket":"14","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"f4bb74e0cb76129d55d71d9b9812bb3eca59d914","detail":"exit 0","duration_ms":729}
+{"v":1,"at":"2026-11-19T08:18:32Z","ticket":"14","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"f4bb74e0cb76129d55d71d9b9812bb3eca59d914","detail":"python3 -m pytest -q tests/test_export.py -k no_orders","duration_ms":212}
+{"v":1,"at":"2026-11-19T08:18:32Z","ticket":"14","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"f4bb74e0cb76129d55d71d9b9812bb3eca59d914","detail":"python3 -c \"from shop import export, store; store.reset(); assert export.orders_csv().splitlines() == ['id,customer_id,lines,total']\"","duration_ms":24}
+{"v":1,"at":"2026-11-19T08:18:32Z","ticket":"14","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"f4bb74e0cb76129d55d71d9b9812bb3eca59d914","detail":"python3 -m pytest -q tests/test_export.py","duration_ms":214}
+{"v":1,"at":"2026-11-19T08:18:32Z","ticket":"14","event":"shipped","patch_id":"f4bb74e0cb76129d55d71d9b9812bb3eca59d914","head":"bca0d0c1543b","tier":"AUTO","size":2}
