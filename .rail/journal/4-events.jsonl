@@ -17,3 +17,4 @@
 {"v":1,"at":"2026-11-19T06:23:05Z","ticket":"4","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c","detail":"python3 -m pytest -q tests/test_orders.py -k each_line_rounds_down","duration_ms":176}
 {"v":1,"at":"2026-11-19T06:23:05Z","ticket":"4","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c","detail":"grep -Eqi 'quantity[^,;]*(NUMERIC|DECIMAL)' migrations/0002_quantity_numeric.sql","duration_ms":4}
 {"v":1,"at":"2026-11-19T06:23:05Z","ticket":"4","event":"shipped","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c","head":"0ce5ea9263f7","tier":"PERSON","size":38}
+{"v":1,"at":"2026-11-19T06:23:17Z","ticket":"4","event":"step","step":"review","status":"ran","result":"pass","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c","detail":"run 1: 0 blocking, 0 findings","duration_ms":6470,"cost_usd":0.0327131}
