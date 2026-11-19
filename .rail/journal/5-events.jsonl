@@ -15,3 +15,4 @@
 {"v":1,"at":"2026-11-19T06:30:53Z","ticket":"5","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"79983a66195ea72ea0b99e5c9cf44319ee997e5c","detail":"grep -Eqi \"status.*(open)\" migrations/0003_order_status.sql","duration_ms":3}
 {"v":1,"at":"2026-11-19T06:30:53Z","ticket":"5","event":"shipped","patch_id":"79983a66195ea72ea0b99e5c9cf44319ee997e5c","head":"085f1b409f0e","tier":"PERSON","size":24}
 {"v":1,"at":"2026-11-19T06:31:05Z","ticket":"5","event":"step","step":"review","status":"ran","result":"pass","patch_id":"79983a66195ea72ea0b99e5c9cf44319ee997e5c","detail":"run 1: 0 blocking, 0 findings","duration_ms":8006,"cost_usd":0.0284574}
+{"v":1,"at":"2026-11-19T06:31:16Z","ticket":"5","event":"step","step":"security","status":"ran","result":"pass","patch_id":"79983a66195ea72ea0b99e5c9cf44319ee997e5c","detail":"run 2: 0 blocking, 0 findings","duration_ms":7747,"cost_usd":0.030168399999999998}
