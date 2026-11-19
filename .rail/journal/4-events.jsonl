@@ -4,3 +4,16 @@
 {"v":1,"at":"2026-11-19T06:10:05Z","ticket":"4","event":"base_checks","base":"3ba10f23fe79","checks":[{"command":"python3 -m pytest -q tests/test_orders.py -k fractional_quantity","result":"red"},{"command":"python3 -m pytest -q tests/test_orders.py -k each_line_rounds_down","result":"red"},{"command":"grep -Eqi 'quantity[^,;]*(NUMERIC|DECIMAL)' migrations/0002_quantity_numeric.sql","result":"red"}]}
 {"v":1,"at":"2026-11-19T06:11:06Z","ticket":"4","event":"saved","via":"stop","files":1}
 {"v":1,"at":"2026-11-19T06:22:28Z","ticket":"4","event":"claimed","session":"d7b3c227-0101-580b-80d6-50a680aa04b8","takeover":true,"session_url":"https://claude.ai/code/session_01QmWTTBZGweEiw5LqUjSVTx"}
+{"v":1,"at":"2026-11-19T06:23:04Z","ticket":"4","event":"step","step":"rebase","status":"ran","result":"pass","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c","detail":"onto main"}
+{"v":1,"at":"2026-11-19T06:23:04Z","ticket":"4","event":"step","step":"ticket-lint","status":"ran","result":"pass","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c"}
+{"v":1,"at":"2026-11-19T06:23:04Z","ticket":"4","event":"step","step":"assumptions","status":"ran","result":"pass","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c"}
+{"v":1,"at":"2026-11-19T06:23:04Z","ticket":"4","event":"step","step":"scope","status":"ran","result":"pass","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c"}
+{"v":1,"at":"2026-11-19T06:23:04Z","ticket":"4","event":"step","step":"rules","status":"ran","result":"pass","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c"}
+{"v":1,"at":"2026-11-19T06:23:04Z","ticket":"4","event":"step","step":"migration","status":"ran","result":"pass","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c"}
+{"v":1,"at":"2026-11-19T06:23:04Z","ticket":"4","event":"step","step":"size","status":"ran","result":"pass","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c","detail":"size 38"}
+{"v":1,"at":"2026-11-19T06:23:04Z","ticket":"4","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c"}
+{"v":1,"at":"2026-11-19T06:23:05Z","ticket":"4","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c","detail":"exit 0","duration_ms":682}
+{"v":1,"at":"2026-11-19T06:23:05Z","ticket":"4","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c","detail":"python3 -m pytest -q tests/test_orders.py -k fractional_quantity","duration_ms":227}
+{"v":1,"at":"2026-11-19T06:23:05Z","ticket":"4","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c","detail":"python3 -m pytest -q tests/test_orders.py -k each_line_rounds_down","duration_ms":176}
+{"v":1,"at":"2026-11-19T06:23:05Z","ticket":"4","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c","detail":"grep -Eqi 'quantity[^,;]*(NUMERIC|DECIMAL)' migrations/0002_quantity_numeric.sql","duration_ms":4}
+{"v":1,"at":"2026-11-19T06:23:05Z","ticket":"4","event":"shipped","patch_id":"b01e90ce45bf464879dc1e465ee0e74e949a451c","head":"0ce5ea9263f7","tier":"PERSON","size":38}
