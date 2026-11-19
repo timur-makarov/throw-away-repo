@@ -30,3 +30,10 @@ def customers_csv():
     for customer in store.list_customers():
         writer.writerow([customer["id"], _safe(customer["name"])])
     return out.getvalue()
+
+
+def products_csv():
+    out, writer = _writer(["id", "name", "cents"])
+    for product in store.list_products():
+        writer.writerow([product["id"], _safe(product["name"]), product["cents"]])
+    return out.getvalue()
