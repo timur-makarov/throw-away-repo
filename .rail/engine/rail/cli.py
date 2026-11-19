@@ -957,9 +957,10 @@ def cmd_next(project, args):
         code, owner, _ = first_match(f)
         if owner == "human" or person_next(f):
             label_wait(project, f, code)
-        elif f.pr_open and "rail:needs-you" in f.labels:
+        elif owner == "agent" and f.pr_open and "rail:needs-you" in f.labels:
             # The wait ended without a rail:go (the base moved under a pull request that waited for its merge, say):
-            # the inbox search must not keep showing it.
+            # the inbox search must not keep showing it. Only when the agent is to act: a ticket that rests may be
+            # another session's, and this clone's copy of its branch may be old, so it proves nothing here.
             try:
                 project.forge.remove_label(f.pr["number"], "rail:needs-you")
             except ForgeError:
@@ -1350,14 +1351,14 @@ def cmd_drop(project, args):
         receipts.append({"step": "close-pr", "status": "ran", "result": "pass", "detail": f"closed #{f.pr['number']}"})
     elif project.remote and not (project.forge and project.forge.ok):
         receipts.append({"step": "close-pr", "status": "unavailable", "detail": "the forge can't be reached"})
-    release_issue(project, f)
+    release_issue(project, f, args.reason or "")
     tickets, facts = load(project)
     leftovers = steps.remove_ticket(project, facts[f.id].t)
     tickets, facts = load(project)
     return from_facts(facts[f.id], receipts, leftovers=leftovers)
 
 
-def release_issue(project, f):
+def release_issue(project, f, reason=""):
     """A dropped ticket from an issue: take the rail label off the issue and say so, so intake doesn't make the
     ticket again. Labelling the issue again is how to retry."""
     from .forge import ForgeError
@@ -1371,8 +1372,9 @@ def release_issue(project, f):
         if "rail" in {l["name"] for l in issue.get("labels", [])}:
             project.forge.remove_label(number, "rail")
             link = f.pr["html_url"] if f.pr else f"branch {f.t.name}"
-            project.forge.comment(number, f"Ticket {f.id} was dropped ({link}). Label this issue `rail` again to retry."
-                                          f"\n{ENGINE_MARK}")
+            why = f" Reason: {reason}." if reason else ""
+            project.forge.comment(number, f"Ticket {f.id} was dropped ({link}).{why} Label this issue `rail` again to"
+                                          f" retry.\n{ENGINE_MARK}")
     except ForgeError:
         pass
 
