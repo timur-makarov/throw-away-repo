@@ -1,6 +1,6 @@
 import re
 
-from shop import orders, store
+from shop import auth, orders, store
 
 _EMAIL = re.compile(r"[^@\s]+@[^@\s.]+(\.[^@\s.]+)+")
 
@@ -22,6 +22,15 @@ def list_customers(request):
 
 def list_products(request):
     return {"status": 200, "products": store.list_products()}
+
+
+def delete_product(request):
+    if not auth.allowed(request, "delete"):
+        return {"status": 403, "error": "not allowed"}
+    product_id = request.get("id")
+    if not isinstance(product_id, int) or not store.delete_product(product_id):
+        return {"status": 404, "error": "no such product"}
+    return {"status": 200}
 
 
 def _customer_fields(request):
