@@ -38,6 +38,28 @@ class Orders(unittest.TestCase):
         store.save_order({"id": 1, "lines": [{"cents": 250, "quantity": 2}, {"cents": 99, "quantity": 3}]})
         self.assertEqual(api.get_order({"id": 1})["order"]["total"], 797)
 
+    def test_a_discount_code_reduces_total_rounded_down(self):
+        store.save_code("TEN", 10)
+        store.save_code("HALFPLUS", 12.5)
+        store.save_order({"id": 1, "code": "TEN", "lines": [{"cents": 999, "quantity": 1}]})
+        store.save_order({"id": 2, "code": "HALFPLUS", "lines": [{"cents": 999, "quantity": 1}]})
+        # 999 * 0.9 = 899.1 -> 899; 999 * 0.875 = 874.125 -> 874
+        self.assertEqual(api.get_order({"id": 1})["order"]["total"], 899)
+        self.assertEqual(api.get_order({"id": 2})["order"]["total"], 874)
+        self.assertIs(type(api.get_order({"id": 2})["order"]["total"]), int)
+
+    def test_a_discount_code_reduces_total_after_lines_are_summed(self):
+        store.save_code("HALF", 50)
+        # Per line: 3 * 0.5 -> 1 twice = 2. On the sum: 6 * 0.5 = 3.
+        store.save_order({"id": 1, "code": "HALF", "lines": [{"cents": 3, "quantity": 1}, {"cents": 3, "quantity": 1}]})
+        self.assertEqual(api.get_order({"id": 1})["order"]["total"], 3)
+
+    def test_an_unknown_code_changes_nothing(self):
+        store.save_order({"id": 1, "code": "NOPE", "lines": [{"cents": 999, "quantity": 1}]})
+        store.save_order({"id": 2, "lines": [{"cents": 999, "quantity": 1}]})
+        self.assertEqual(api.get_order({"id": 1})["order"]["total"], 999)
+        self.assertEqual(api.get_order({"id": 2})["order"]["total"], 999)
+
     def test_status_defaults_to_open(self):
         store.save_order(order(1))
         self.assertEqual(api.get_order({"id": 1})["order"]["status"], "open")

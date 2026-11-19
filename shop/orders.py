@@ -10,7 +10,12 @@ def _line_cents(line):
 
 
 def total(order):
-    return sum(_line_cents(line) for line in order["lines"])
+    cents = sum(_line_cents(line) for line in order["lines"])
+    percent = store.get_code(order["code"]) if "code" in order else None
+    if percent is None:
+        return cents
+    discounted = Decimal(cents) * (100 - Decimal(str(percent))) / 100
+    return int(discounted.to_integral_value(rounding=ROUND_FLOOR))
 
 
 def summary(order_id):

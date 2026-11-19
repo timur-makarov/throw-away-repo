@@ -1,0 +1,30 @@
+{
+  "schema": "review/v1",
+  "ticket": "7",
+  "runs": [
+    {
+      "run": 1,
+      "role": "review",
+      "patch_id": "9e398a331a8c48ab2cb5f746a43eea5704ec49cb",
+      "head": "454d3b07550e",
+      "tier": "AUTO",
+      "at": "2026-11-19T06:32:31Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.027034700000000002,
+      "summary": "I read the diff and ran the full test suite (29 passed) and ruff (clean). The discount is applied once to the summed lines and floored with Decimal, with no float involved. A missing or unknown code leaves the total unchanged. The three Done Contract checks match the added tests. I found no problems.",
+      "findings": []
+    },
+    {
+      "run": 2,
+      "role": "review",
+      "patch_id": "1dcea4f222966166ba9b67fc79b91e2c9bb7fc66",
+      "head": "ae0f2df1e05c",
+      "tier": "AUTO",
+      "at": "2026-11-19T06:38:16Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.0275707,
+      "summary": "I read the diff and ran the full test suite and ruff. All 31 tests pass and ruff is clean. The three Done Contract `-k` selectors each match a new test. The discount is applied once to the summed lines and floored with Decimal. A missing code or an unknown code leaves the total unchanged.",
+      "findings": []
+    }
+  ]
+}
