@@ -24,3 +24,4 @@
 {"v":1,"at":"2026-11-19T13:05:13Z","ticket":"19","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"0b3a6b98190e7235b88bf83cc8dde1895bd63d71","detail":"ruff check .","duration_ms":8}
 {"v":1,"at":"2026-11-19T13:05:13Z","ticket":"19","event":"shipped","patch_id":"0b3a6b98190e7235b88bf83cc8dde1895bd63d71","head":"dfc7563891b3","tier":"PERSON","size":60}
 {"v":1,"at":"2026-11-19T13:05:27Z","ticket":"19","event":"step","step":"review","status":"ran","result":"pass","patch_id":"0b3a6b98190e7235b88bf83cc8dde1895bd63d71","detail":"run 1: 0 blocking, 0 findings","duration_ms":10702,"cost_usd":0.0539481}
+{"v":1,"at":"2026-11-19T13:05:40Z","ticket":"19","event":"step","step":"security","status":"ran","result":"pass","patch_id":"0b3a6b98190e7235b88bf83cc8dde1895bd63d71","detail":"run 2: 0 blocking, 0 findings","duration_ms":10502,"cost_usd":0.0315645}
