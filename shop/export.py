@@ -4,6 +4,13 @@ import io
 from shop import orders, store
 
 
+def _safe(value):
+    text = str(value)
+    if text.startswith(("=", "+", "-", "@", "\t", "\r")):
+        return "'" + text
+    return text
+
+
 def orders_csv():
     out = io.StringIO()
     writer = csv.writer(out)
@@ -18,5 +25,5 @@ def customers_csv():
     writer = csv.writer(out)
     writer.writerow(["id", "name"])
     for customer in store.list_customers():
-        writer.writerow([customer["id"], customer["name"]])
+        writer.writerow([customer["id"], _safe(customer["name"])])
     return out.getvalue()
