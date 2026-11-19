@@ -1,8 +1,16 @@
+from decimal import ROUND_FLOOR, Decimal
+
 from shop import store
 
 
+def _line_cents(line):
+    # str() keeps 0.29 as 0.29 instead of its binary float neighbour 0.28999...
+    amount = Decimal(str(line["cents"])) * Decimal(str(line["quantity"]))
+    return int(amount.to_integral_value(rounding=ROUND_FLOOR))
+
+
 def total(order):
-    return sum(line["cents"] * line["quantity"] for line in order["lines"])
+    return sum(_line_cents(line) for line in order["lines"])
 
 
 def summary(order_id):
