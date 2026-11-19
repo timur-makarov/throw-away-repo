@@ -1,5 +1,5 @@
 """Who may do what. The only module that decides it."""
-ROLES = {"admin": {"read", "write", "delete"}, "clerk": {"read", "write"}, "viewer": {"read"}}
+ROLES = {"admin": {"read", "write", "delete", "rename"}, "clerk": {"read", "write"}, "viewer": {"read"}}
 
 
 def allowed(request, action):
