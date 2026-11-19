@@ -70,7 +70,7 @@ def guide(project, code, action, f=None):
 def from_facts(f, steps_=None, code=None, **extra):
     row_code, owner, action = first_match(f)
     worker(f, action)
-    if owner == "human":
+    if owner == "human" or person_next(f):
         label_wait(f.project, f, row_code)  # the person's inbox is this label, whichever command met the wait
     named = guide(f.project, row_code, action, f)
     if named:
@@ -351,7 +351,17 @@ def transition(project, f, code):
             commit(project, f, run, "rebase failed")
         else:
             run.record("rebase", True, project.patch_id(t.ref), f"onto {project.base}")
-            commit(project, f, run, "rebase")
+            if commit(project, f, run, "rebase") == "rejected":
+                # Another session rebased and pushed the same ticket first. Its copy is the pull request's; ours
+                # holds nothing more than this rebase, so take theirs.
+                theirs = gitx.rev(f"refs/remotes/{project.remote}/{t.branch}", project.root)
+                rebased = theirs and gitx.ok(["merge-base", "--is-ancestor", gitx.rev(project.base_ref, project.root),
+                                              theirs], project.root)
+                if rebased and gitx.git(["reset", "--quiet", "--hard", theirs], t.worktree, check=False).returncode == 0:
+                    from . import forge
+                    forge.expire()  # the pull request's head moved, by their push
+                    run.steps[:] = [s for s in run.steps if s["step"] not in ("push", "rebase")]
+                    run.steps.append({"step": "rebase", "status": "not_run", "detail": "another session rebased it first"})
     elif code == "RESUME":
         ensure_local(project, t)
         if f.claimed_elsewhere and not claim(project, t, takeover=True):
@@ -945,7 +955,7 @@ def cmd_next(project, args):
     # A person's inbox is the label: every wait gets it now, not only when the agent runs dry.
     for f in facts.values():
         code, owner, _ = first_match(f)
-        if owner == "human":
+        if owner == "human" or person_next(f):
             label_wait(project, f, code)
         elif f.pr_open and "rail:needs-you" in f.labels:
             # The wait ended without a rail:go (the base moved under a pull request that waited for its merge, say):
@@ -1039,6 +1049,12 @@ def note_drafting(project, f):
     return False
 
 
+def person_next(f):
+    """A PERSON ticket that shipped and only waits for CI: the person's merge is all that is left. It is labelled
+    now, because the session that shipped it may be gone when CI ends and nothing starts a run then."""
+    return f.state == "in-ci" and not f.auto and f.pr_open and f.pushed and not f.behind
+
+
 def label_wait(project, f, code):
     """The inbox is one saved search, is:open label:rail:needs-you: label each wait's PR. The engine only ever sets
     and removes this label. It never reads it as a person's word: that is rail:hold."""
@@ -1098,6 +1114,7 @@ def commit(project, f, run, message):
                                     f" lacks, so the pull request still shows the old commit. Compare the two (git log"
                                     f" {t.branch}...{project.remote}/{t.branch}); if you can't bring them together,"
                                     " this is for a person"})
+    return pushed
 
 
 def after_failure(project, nn, run):

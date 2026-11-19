@@ -31,6 +31,11 @@ security seat and the refuter.
 the work began (the `base_checks` event, `rail docs loop`), the review run's brief says so, and asks the
 reviewer to look at whether the change is tested.
 
+**After an amend nobody approved.** When `rail amend` changed the Done Contract or the scope after the ticket was
+first accepted, and no person approved it (an AUTO ticket), the review run's brief also holds the contract as first
+accepted: its `Check:` lines and its scope. The reviewer blocks when the amend dropped or weakened a check so that a
+fault now passes, and lets an amend that corrects a wrong check go.
+
 ## Findings
 
 Each finding has an id (`F1`, `F2`, ...), a severity, a location and a claim, and sometimes `evidence`: a

@@ -33,7 +33,7 @@ tool to go on, and open a ticket so that `[commands] provision` (or `setup`) ins
 
 Consult asks a different model for advice when you are stuck. Its brief is the ticket, the diff and the
 failing step's raw output, plus one question; your own story is left out. It answers `proceed`, `change`
-or `stop`, and the engine keeps the advice in `.rail/journal/NN-advice.md`. It is read-only and never
+or `stop` (a product decision the ticket leaves open; a plainly wrong check is one you amend), and the engine keeps the advice in `.rail/journal/NN-advice.md`. It is read-only and never
 checks the change, and at most three run per ticket. Every verdict is advice, `stop` too: you still get the one attempt after
 it. The advice given at the budget is in the answer of
 `rail advance` and, until the next attempt, in the brief of `rail next`, so a fresh worker gets it too. Ask it yourself with `rail consult NN "question"`.

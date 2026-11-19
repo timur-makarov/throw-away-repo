@@ -10,6 +10,7 @@ import re
 
 from . import areas, gitx
 from .project import event, review_path, ticket_path
+from .ticket import Ticket
 from .util import could_not_run, match_any, now_iso, run_shell, tail
 
 SECURITY = """Security. This list is a checklist, not a ceiling. Report only what someone could exploit in this application:
@@ -208,6 +209,26 @@ def checks_green_on_base(t):
     return bool(checks) and all(c.get("result") == "green" for c in checks)
 
 
+def first_contract(project, t):
+    """The Done Contract and scope as first accepted, when an amend that nobody approved has changed either since.
+    None when there was no such amend."""
+    events = t.events
+    first = next((i for i, e in enumerate(events) if e.get("event") == "accepted"), None)
+    if first is None or not any(e.get("event") == "amended" and not e.get("needs_approval")
+                                and {"done_contract", "scope"} & set(e.get("changed") or []) for e in events[first:]):
+        return None
+    accepted, path, done = events[first], ticket_path(t.id), None
+    for sha in gitx.out(["log", "--format=%H", t.ref, "--", path], project.root).split():
+        old = Ticket(gitx.read_blobs([f"{sha}:{path}"], project.root).get(f"{sha}:{path}") or "")
+        if old.done_hash() == accepted.get("done"):
+            done = old.sections.get("Done Contract", "")
+            break
+    return ["## The contract as first accepted",
+            "An amend nobody approved changed this ticket's contract after it was first accepted. As first accepted:",
+            done or "(the Done Contract as first accepted is not in the branch's history)",
+            f"scope_paths: {', '.join(accepted.get('scope_paths') or [])}.", ""]
+
+
 def brief(project, f, role, ledger, disputed=None):
     t, ref = f.t, f.t.ref
     ticket_text = gitx.read_blobs([f"{ref}:{ticket_path(t.id)}"], project.root)[f"{ref}:{ticket_path(t.id)}"] or ""
@@ -232,6 +253,7 @@ def brief(project, f, role, ledger, disputed=None):
         f"# Review brief: ticket {t.id}, {f.tier}", "", f"This run's job: {job}", "",
         "## The ticket", ticket_text.strip(), "",
         f"Risk: tier {f.tier}. scope_paths: {', '.join(f.ticket.scope)}.", "",
+        *((first_contract(project, t) or []) if role == "review" else []),
         *([BASE_GREEN, ""] if role == "review" and checks_green_on_base(t) else []),
         "## The diff", "```diff", diff, "```", "",
         "## Areas this change touches", "| Area | Paths | Holds |", "|---|---|---|", rows, "",

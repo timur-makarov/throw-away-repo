@@ -72,12 +72,31 @@ def _migration(f):
             " expand-contract) and rollback in the ticket's front matter.")
 
 
+def _base_green(f):
+    """Every check of the contract as it stands passed on the base before any work: the checks can't tell done
+    from not done yet. Quiet once the contract's checks differ from the ones run on the base."""
+    found = f.t.last("base_checks")
+    checks = (found or {}).get("checks") or []
+    if not checks or any(c.get("result") != "green" for c in checks):
+        return ""
+    if [c.get("command") for c in checks] != f.ticket.checks():
+        return ""
+    return (f"Every Check: above already passed on the base branch before any work, so the contract can't tell done"
+            f" from not done. A new test in a file these checks already run does not change the contract. Add a Check:"
+            f" line that fails now and passes once the work is done, such as one that runs your new test by name: edit"
+            f" the Done Contract in {ticket_path(f.id)}, then run rail amend {f.id} \"why\".")
+
+
 def _implement(f):
     out_of_scope = f.ticket.sections.get("Out of scope", "")
     lines = [
         f"Implement ticket {f.id}: {f.ticket.title}",
         f"Work in {f.cwd}, on branch {f.t.branch}. The ticket is {ticket_path(f.id)}.",
         "", "Done Contract:", _done_contract(f), "",
+    ]
+    if _base_green(f):
+        lines += [_base_green(f), ""]
+    lines += [
         f"Change only paths inside scope_paths: {_join(f.ticket.scope)}.",
     ]
     if out_of_scope:

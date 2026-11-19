@@ -16,9 +16,8 @@ on purpose: a commit made in the middle would be lost.
 
 ## 1. See all three sides
 
-For each conflicted file, read what the base changed and what you changed against their common ancestor:
-`git diff :1:FILE :2:FILE` and `git diff :1:FILE :3:FILE`. Setting `merge.conflictstyle` to `zdiff3` shows
-the ancestor inside the markers.
+For each conflicted file, read what the base changed and what you changed against their common ancestor.
+Setting `merge.conflictstyle` to `zdiff3` shows the ancestor inside the markers.
 
 ## 2. Decide the behaviour, then write the code
 

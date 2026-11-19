@@ -74,20 +74,8 @@ Disputes: 1. The refuter dismissed 1.
 
 ## Guides
 
-Once a brief has named a [guide](guides.md), the GUIDES table sets the merged tickets that got the `start`
-guide (a `guided` event for `start`) beside the rest:
-
-| Line | Counts |
-|---|---|
-| `merged tickets` | Merged tickets in each group |
-| `failed steps per ticket` | Counted failed ship steps, divided by the tickets |
-| `review runs per ticket` | `review`, `security` and `refuter` runs, divided by the tickets |
-| `waited for a person on retries` | Tickets a person continued right after a counted failed ship, review or security step: the wait the retry budget or cap makes |
-| `Guides named` | For each situation, the tickets it was named for |
-
-In JSON it is under `guides`: `guided` and `not guided`, each with `tickets`, `failed_steps`, `review_runs`,
-`waited` and the two per-ticket numbers, and `situations`. A few tickets prove little either way: compare
-the groups over weeks, and change a guide only when the numbers move (`rail docs guides`).
+Once a brief has named a [guide](guides.md), one line says how many merged tickets each situation was named
+for: `Guides named: start 12, conflict 2.` In JSON it is `guides.situations`.
 
 ## Grilling
 

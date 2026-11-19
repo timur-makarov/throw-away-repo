@@ -98,27 +98,6 @@ def _amended_after_acceptance(t):
     return False
 
 
-def _guide_row():
-    return {"tickets": 0, "failed_steps": 0, "review_runs": 0, "waited": 0}
-
-
-def _per_ticket(row):
-    n = row["tickets"]
-    return {**row, "failed_steps_per_ticket": round(row["failed_steps"] / n, 2) if n else None,
-            "review_runs_per_ticket": round(row["review_runs"] / n, 2) if n else None}
-
-
-def _waited_on_retries(events):
-    """A person continued the ticket right after a counted failed ship, review or security step: the wait the retry
-    budget or cap makes."""
-    last = None
-    for e in events:
-        if e.get("event") == "step":
-            last = e
-        elif e.get("event") == "continued" and last and last.get("result") == "fail" and last.get("counted", True) \
-                and last.get("step") in (*SHIP_STEPS, "review", "security"):
-            return True
-    return False
 
 
 TAKEN = ("accepted", "edited", "rejected", "answered")
@@ -199,7 +178,6 @@ def collect(project, tickets, since=None, states=None):
     raised, consults, adopted, steps, roles, models = Counter(), 0, 0, {}, {}, {}
     split = {"offered": 0, "auto": 0, "person": 0}  # AUTO changes over [size] cap offered a split, and what came of it
     blocking, advisory, parked, disputes = Counter(), Counter(), 0, Counter()
-    guided = {"guided": _guide_row(), "not guided": _guide_row()}  # by whether the start guide was named
     situations = Counter()
     for nn, t in tickets.items():
         ships = [e for e in t.events if e.get("event") == "shipped"]
@@ -228,13 +206,6 @@ def collect(project, tickets, since=None, states=None):
             row["minutes"].append(max(0.0, (merged_at[nn] - parse_iso(claims[0]).timestamp()) / 60))
         named = {e.get("situation") for e in t.events if e.get("event") == "guided"}
         situations.update(named)
-        group = guided["guided" if "start" in named else "not guided"]
-        group["tickets"] += 1
-        group["failed_steps"] += sum(e.get("event") == "step" and e.get("result") == "fail" and e.get("counted", True)
-                                     and e.get("step") in SHIP_STEPS for e in t.events)
-        group["review_runs"] += sum(e.get("event") == "step" and e.get("status") == "ran"
-                                    and e.get("step") in ("review", "security", "refuter") for e in t.events)
-        group["waited"] += _waited_on_retries(t.events)
         offered = next((i for i, e in enumerate(t.events) if e.get("event") == "split_offered"), None)
         if offered is not None:
             later = t.events[offered + 1:]
@@ -289,8 +260,7 @@ def collect(project, tickets, since=None, states=None):
     return {
         "since": since, "merged": merged, "left_out": len(tickets) - merged, "tiers": tiers, "raised": dict(raised),
         "base_checks": base, "adopted": adopted, "split": split,
-        "guides": {**{name: _per_ticket(row) for name, row in guided.items()},
-                   "situations": dict(sorted(situations.items()))},
+        "guides": {"situations": dict(sorted(situations.items()))},
         "grilling": grilling(tickets, states or {}, merged_at, start),
         "sources": by_source(project, tickets, states or {}, merged_at, reverted, start),
         "consults": consults, "steps": {name: steps[name] for name in sorted(steps, key=_step_rank)},
@@ -378,19 +348,11 @@ def render_sources(data):
 
 
 def render_guides(data):
-    """Tickets the start guide was named for beside the rest, once any guide was named."""
-    guides = data["guides"]
-    if not guides["situations"]:
+    """How many merged tickets each guide was named for, once any was."""
+    situations = data["guides"]["situations"]
+    if not situations:
         return []
-    cols = [guides["guided"], guides["not guided"]]
-    return ["", *_table(["GUIDES", "guided", "not guided"], [
-        ["merged tickets", *[r["tickets"] for r in cols]],
-        ["failed steps per ticket", *["-" if r["failed_steps_per_ticket"] is None else r["failed_steps_per_ticket"]
-                                     for r in cols]],
-        ["review runs per ticket", *["-" if r["review_runs_per_ticket"] is None else r["review_runs_per_ticket"]
-                                    for r in cols]],
-        ["waited for a person on retries", *[r["waited"] for r in cols]]]),
-        "Guides named: " + ", ".join(f"{name} {n}" for name, n in guides["situations"].items()) + "."]
+    return ["", "Guides named: " + ", ".join(f"{name} {n}" for name, n in situations.items()) + "."]
 
 
 def render(data):
