@@ -12,3 +12,4 @@
 {"v":1,"at":"2026-11-19T10:52:24Z","ticket":"21","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":""}
 {"v":1,"at":"2026-11-19T10:52:25Z","ticket":"21","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"","detail":"exit 0","duration_ms":807}
 {"v":1,"at":"2026-11-19T10:52:25Z","ticket":"21","event":"step","step":"checks","status":"ran","result":"fail","patch_id":"","detail":"grep -q \"Who may call\" docs/api.md: exit 1","duration_ms":3,"signature":"checks:f803ab036528"}
+{"v":1,"at":"2026-11-19T10:52:37Z","ticket":"21","event":"saved","via":"stop","files":1}
