@@ -13,3 +13,4 @@
 {"v":1,"at":"2026-11-19T08:15:01Z","ticket":"12","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"","detail":"python3 -m pytest -q tests/test_export.py -k empty","duration_ms":214}
 {"v":1,"at":"2026-11-19T08:15:01Z","ticket":"12","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"","detail":"python3 -m pytest -q tests/test_export.py","duration_ms":203}
 {"v":1,"at":"2026-11-19T08:15:01Z","ticket":"12","event":"shipped","patch_id":"","head":"df53a2b36388","tier":"AUTO","size":0}
+{"v":1,"at":"2026-11-19T10:25:45Z","ticket":"12","event":"dropped","by":"person","reason":"duplicate: another ticket for the same issue merged"}
