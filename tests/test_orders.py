@@ -15,6 +15,10 @@ class Orders(unittest.TestCase):
         store.save_order(order(1))
         self.assertEqual(api.get_order({"id": 1})["order"]["total"], 1000)
 
+    def test_summary_line_count_is_the_number_of_lines(self):
+        store.save_order({"id": 1, "lines": [{"cents": 100, "quantity": 1}, {"cents": 200, "quantity": 3}]})
+        self.assertEqual(api.get_order({"id": 1})["order"]["lines"], 2)
+
     def test_a_missing_order_is_a_404(self):
         self.assertEqual(api.get_order({"id": 9})["status"], 404)
 

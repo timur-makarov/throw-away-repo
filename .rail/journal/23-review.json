@@ -1,0 +1,18 @@
+{
+  "schema": "review/v1",
+  "ticket": "23",
+  "runs": [
+    {
+      "run": 1,
+      "role": "review",
+      "patch_id": "3df5118750496d6f2738872846635505c3307885",
+      "head": "d65bd108ea3f",
+      "tier": "AUTO",
+      "at": "2026-11-19T13:18:40Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.021138200000000003,
+      "summary": "The change only adds a test, and summary() already returned the line count. I ran the full suite (46 passed) and the `-k line_count` check (1 passed, 10 deselected). Both Done Contract checks are met.",
+      "findings": []
+    }
+  ]
+}
