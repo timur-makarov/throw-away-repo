@@ -36,7 +36,7 @@ def test_the_csv_total_includes_the_discount_code():
     assert export.orders_csv().splitlines()[1] == "1,,1,899"
 
 
-def test_empty_store_still_returns_the_header_row():
+def test_no_orders_still_returns_the_header_row():
     store.reset()
     assert export.orders_csv() == "id,customer_id,lines,total\r\n"
 

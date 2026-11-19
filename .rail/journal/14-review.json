@@ -1,0 +1,18 @@
+{
+  "schema": "review/v1",
+  "ticket": "14",
+  "runs": [
+    {
+      "run": 1,
+      "role": "review",
+      "patch_id": "f4bb74e0cb76129d55d71d9b9812bb3eca59d914",
+      "head": "6a47df35480a",
+      "tier": "AUTO",
+      "at": "2026-11-19T08:18:46Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.0203353,
+      "summary": "I read shop/export.py and ran the three Done Contract checks. The header is already written before the loop, so the ticket expects a test-only change. The diff only renames the existing test to `test_no_orders_...`, so `-k no_orders` now selects it. The `-k no_orders` pytest check and the inline `python3 -c` check both pass. I did not run the full `tests/test_export.py` check, and I found nothing wrong in the change.",
+      "findings": []
+    }
+  ]
+}
