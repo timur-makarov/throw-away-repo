@@ -973,9 +973,11 @@ def cmd_next(project, args):
             return from_facts(f, took_in + receipts, leftovers=leftovers)
 
     tickets, facts = load(project)
-    waits, held, ci = [], [], []
+    waits, held, ci, resting = [], [], [], []
     for f in facts.values():
         code, owner, action = first_match(f)
+        if owner == "none" and f.state in ("new", "accepted") + OPEN and code != "CLAIMED_ELSEWHERE":
+            resting.append(f"- {f.id}: {action['brief']}")  # so a runner offered none of them knows why
         if owner == "human":
             waits.append({"ticket": f.id, "needs": code, "brief": action["brief"],
                           **({"pr": f.pr["html_url"]} if f.pr else {})})
@@ -991,8 +993,16 @@ def cmd_next(project, args):
             command = f"gh run watch {run_id} --interval 30 --exit-status; rail next"
             return answer(ci[0].id, ci[0].state, "agent", {"kind": "script", "brief": command, "command": command},
                           "CI_WAIT", took_in, **extra)
+        fresh_push = [f for f in ci if f.forge and f.quiet_minutes < CI_START_MINUTES]
+        if fresh_push:
+            # Pushed a moment ago and GitHub shows no run yet. Answering "only a person can act" here ends the runner
+            # with its own ticket about to go green and nobody left to merge or label it.
+            command = "sleep 20; rail next"
+            return answer(fresh_push[0].id, fresh_push[0].state, "agent",
+                          {"kind": "script", "brief": command, "command": command}, "CI_WAIT", took_in, **extra)
+    others = ("\nNothing for an agent on these now:\n" + "\n".join(resting)) if resting else ""
     if waits:
-        brief = "Tickets wait for a person:\n" + "\n".join(f"- {w['ticket']}: {w['brief']}" for w in waits)
+        brief = "Tickets wait for a person:\n" + "\n".join(f"- {w['ticket']}: {w['brief']}" for w in waits) + others
         return answer(owner="human", code="WAITING_HUMAN", action={"kind": "human_wait", "brief": brief},
                       steps_=took_in, **extra)
     from . import sweep
@@ -1003,13 +1013,16 @@ def cmd_next(project, args):
     if ci:
         # CI is running and there is no run to watch (another CI system, or the run hasn't started yet).
         return answer(ci[0].id, ci[0].state, "none", first_match(ci[0])[2], "CI_WAIT", took_in, **extra)
-    brief = "No ticket to work on. New work starts with: rail add <ticket file>"
+    brief = "No ticket to work on. New work starts with: rail add <ticket file>" + others
     if held:
         limit = project.config["claim"]["stale_minutes"]
         brief += ("\nOther sessions are at work on: " + ", ".join(
             f"{h['ticket']} (quiet {h['quiet_minutes']} min)" for h in held)
             + f". A ticket quiet for {limit} min is resumed by the next rail next; rail next --ticket NN takes one now.")
     return answer(code="NO_WORK", action={"kind": "rest", "brief": brief}, steps_=took_in, **extra)
+
+
+CI_START_MINUTES = 3  # how long after a push GitHub may take to show its run
 
 
 def note_drafting(project, f):

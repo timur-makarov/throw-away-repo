@@ -255,7 +255,8 @@ ROWS = [
     # One session writes a contract: four that start at once would each send a worker to write the same one.
     ("CONTRACT_ELSEWHERE", "none",  "rest",        lambda f: f.state == "new" and f.lint_errors and f.drafted_elsewhere
                                                    and not f.explicit,
-     lambda f: f"Another session is writing the contract of ticket {f.id}. rail next --ticket {f.id} takes it over."),
+     lambda f: f"Another session is writing the contract of ticket {f.id}. Leave it; rail next --ticket {f.id} takes it over"
+               " when that session is gone."),
     ("TICKET_LINT",        "agent", "agent_task",  lambda f: f.state == "new" and f.lint_errors,
      lambda f: f"Ticket {f.id} isn't complete: {'; '.join(f.lint_errors)}. Read it ({ticket_path(f.id)} on branch"
                f" {f.t.name}), write the whole ticket to a file with its Done Contract, tier and scope_paths, and run:"
