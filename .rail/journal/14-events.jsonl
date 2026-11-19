@@ -3,3 +3,11 @@
 {"v":1,"at":"2026-11-19T08:11:19Z","ticket":"14","event":"accepted","by":"engine","via":"lint","tier":"AUTO","contract":"4df9fe91dc2a","done":"271d831d3d30","scope_paths":["shop/export.py","tests/test_export.py"]}
 {"v":1,"at":"2026-11-19T08:17:15Z","ticket":"14","event":"claimed","session":"b540395d-9ceb-572f-be36-08a1135eb5c7","takeover":false,"session_url":"https://claude.ai/code/session_01QmWTT99vSi8fPCxYL78Gk6"}
 {"v":1,"at":"2026-11-19T08:17:19Z","ticket":"14","event":"base_checks","base":"18d09480a6eb","checks":[{"command":"python3 -m pytest -q tests/test_export.py -k no_orders","result":"red"},{"command":"python3 -c \"from shop import export, store; store.reset(); assert export.orders_csv().splitlines() == ['id,customer_id,lines,total']\"","result":"green"},{"command":"python3 -m pytest -q tests/test_export.py","result":"green"}]}
+{"v":1,"at":"2026-11-19T08:18:02Z","ticket":"14","event":"step","step":"ticket-lint","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-19T08:18:02Z","ticket":"14","event":"step","step":"assumptions","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-19T08:18:02Z","ticket":"14","event":"step","step":"scope","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-19T08:18:02Z","ticket":"14","event":"step","step":"rules","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-19T08:18:02Z","ticket":"14","event":"step","step":"size","status":"ran","result":"pass","patch_id":"","detail":"size 0/600"}
+{"v":1,"at":"2026-11-19T08:18:02Z","ticket":"14","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-19T08:18:03Z","ticket":"14","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"","detail":"exit 0","duration_ms":835}
+{"v":1,"at":"2026-11-19T08:18:03Z","ticket":"14","event":"step","step":"checks","status":"ran","result":"fail","patch_id":"","detail":"python3 -m pytest -q tests/test_export.py -k no_orders: exit 5","duration_ms":212,"signature":"checks:2146fadca65f"}
