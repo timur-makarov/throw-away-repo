@@ -17,7 +17,7 @@ from .ticket import TIERS, highest
 from .util import RailError, parse_iso
 
 REVIEW_STEPS = ("review", "security", "refuter", "sweep")
-STEP_ORDER = ("setup", "rebase", "ticket-lint", "assumptions", "scope", "rules", "migration", "size", "doc-lint",
+STEP_ORDER = ("setup", "rebase", "ticket-lint", "assumptions", "scope", "change", "rules", "migration", "size", "doc-lint",
               "verify", "checks", *REVIEW_STEPS, "merge")
 NO_MODEL = "(not reported)"
 NO_RUNS = {"runs": 0, "cost_usd": 0.0, "blocking": 0, "fixed": 0}

@@ -86,3 +86,11 @@ PostToolUse, at most every ten minutes. They never block and never ask.
 No git hooks are installed: they would collide with a project's own hook manager, and CI repeats the
 checks. The sandbox is turned on with `"sandbox": {"enabled": true}`; where its tools (bubblewrap and socat
 on Linux) are missing, Claude Code runs without it and says so.
+
+Two settings let the engine work inside it. `rail advance` and `rail next` are in `excludedCommands`, so a
+call that holds only those commands runs outside the sandbox: the engine writes the journal, which the deny
+rule on `.rail/journal/**` otherwise forbids to every sandboxed command, the engine included. The price is
+that `verify` and the checks, which `rail advance` starts, run outside the sandbox in such a call.
+`api.anthropic.com` is an allowed domain, so the reviewer, which is a `claude -p` process the engine starts,
+can answer when `rail advance` is one command of a longer call and stays sandboxed. Add the hosts your own
+`verify` needs to `sandbox.network.allowedDomains`.

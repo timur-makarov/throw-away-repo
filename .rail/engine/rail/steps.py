@@ -285,7 +285,9 @@ def base_fails_verify(project):
             run_shell(project.config["commands"]["setup"], path, {"RAIL_TICKET": ""}, timeout)
         code, output, _ = run_shell(project.config["commands"]["verify"], path, {"RAIL_TICKET": ""}, timeout)
         # verify that can't start on the base proves nothing about the base: the ticket's own failure stands
-        return None if code == 0 or could_not_run(code) else tail(output)
+        if code is None or code == 0 or could_not_run(code):  # None: it timed out, which proves nothing either
+            return None
+        return tail(output) or f"verify exits {code} on the base branch and prints nothing."
 
 
 def ship(project, f, run):
@@ -293,6 +295,10 @@ def ship(project, f, run):
     t, ref = f.t, f.t.ref
     wt = t.worktree
     base_tip = gitx.rev(project.base_ref, project.root)
+    remote_tip = gitx.rev(f"refs/remotes/{project.remote}/{t.branch}", project.root) if project.remote else None
+    if remote_tip and not gitx.ok(["merge-base", "--is-ancestor", remote_tip, "HEAD"], wt):
+        # The agent rebased by hand after a conflict: the push needs the lease the engine notes for its own rebase.
+        project.note_rewrite(t.branch)
     if base_tip and not gitx.ok(["merge-base", "--is-ancestor", base_tip, "HEAD"], wt):
         before = project.patch_id(ref)
         project.note_rewrite(t.branch)
@@ -326,6 +332,14 @@ def ship(project, f, run):
             run.failure = ("verify", "verify fails on the base branch too, so this attempt doesn't count. rail next"
                                      " opens one ticket that fixes the base; this ticket's ship waits until it merges.")
     if tier is None:
+        return run
+    # Every check passed and no file changed: the checks passed before the ticket too, so there is nothing to ship
+    # or merge. A sweep ticket is the one exception: it merges to move the sweep's marker.
+    if not project.changed_files(ref) and not (f.ticket.get("external_id") or "").startswith("sweep#"):
+        run.record("change", False, patch_id, "no file changed",
+                   output=f"Ticket {t.id} changes no file, so there is nothing to ship. If the work is already on the"
+                          f" base branch, say so and close the ticket: rail drop {t.id} --reason \"already done:"
+                          f" where\". If it is not, make the change, then run: rail advance {t.id}")
         return run
     head = gitx.rev(ref, project.root)
     run.events.append(event(t.id, "shipped", patch_id=patch_id, head=head[:12], tier=tier, size=run.size))
@@ -394,7 +408,9 @@ def describe(project, t, ticket, tier):
         "Review: " + (("reviewer, security seat" if tier == "PERSON" else "reviewer") if reviewed else "none"),
     ]
     if external.startswith("github#"):
-        body.append(f"Closes #{external.split('#', 1)[1]}")
+        # A ticket narrowed to the first part of its request leaves the issue open for the rest.
+        word = "Part of" if ticket.sections.get("Split") else "Closes"
+        body.append(f"{word} #{external.split('#', 1)[1]}")
     if external.startswith("sweep#"):
         body.append(f"Sweep: since {external.split('#', 1)[1]}")  # where the next sweep starts
     sessions = [e["session_url"] for e in t.events if e.get("event") == "claimed" and e.get("session_url")]

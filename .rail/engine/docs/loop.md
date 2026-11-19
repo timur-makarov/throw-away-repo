@@ -18,6 +18,14 @@ rail next --json -> do action.brief -> rail advance --json -> repeat
   may ignore them. An unattended runner, a cloud session a scheduled task starts, starts one subagent on
   that model and effort, gives it the brief word for word and the `cwd`, and runs `rail advance` itself when
   the subagent returns (`rail docs cloud`). The engine starts no agent.
+- `reason.code` names the situation, and `reason.message` says it in a sentence on a refusal. The codes an
+  agent meets most: `IMPLEMENT` (do the ticket's work), `VERIFY_ASSUMPTIONS` (open `ASSUMED:` rows),
+  `TICKET_LINT` (fix the ticket), `STEP_FAILED` (a ship step failed; the output is in the brief),
+  `ANSWER_FINDINGS`, `REBASING` and `CONFLICT`, `SPLIT`, `RED_BASE` (the base branch fails `verify`),
+  `WAITING_AFTER` and `SCOPE_OVERLAP` (another ticket goes first), `CI_WAIT`, `NO_WORK`. A person's turn is
+  `APPROVE_CONTRACT`, `APPROVE_AMEND`, `MERGE_BY_PERSON`, `RETRY_CAP` (the retry budget or the cap),
+  `FINDING_UPHELD`, `STUCK_REVIEW`, `HOLD` or `MERGE_FAILED`. Act on `owner` and `action`; the code is for
+  logs and for telling two briefs apart.
 - `guide` names the page `[guides]` gives for the brief's situation, such as the start of a ticket or a
   failure that repeats; the brief's last line then says to read it (`rail docs guides`). It is a hint, and
   part of the brief, so a subagent that gets the brief word for word gets the guide too.

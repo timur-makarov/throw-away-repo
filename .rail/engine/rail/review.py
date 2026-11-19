@@ -382,9 +382,11 @@ def run(project, f, role, receipt, disputed=None, prompt=None):
                          if role == "refuter" and x.get("repeats") and x.get("severity") == "parked"]
     blocking = [x for x in entry["findings"] if (ledger.findings.get(x.get("repeats"), x).get("severity") == "blocking")
                 and x.get("repeats") not in parked_by_refuter]
+    to_refuter = 0
     if role == "security":
         # The seat's new blocking findings each go to a refuter at once; the refuter's
         # verdict is what fails. A repeat of one the refuter already upheld stays open.
+        to_refuter = len([x for x in blocking if not x.get("repeats")])
         blocking = [x for x in blocking if x.get("repeats")]
     if role == "sweep":
         blocking = []  # a sweep never blocks a merge
@@ -392,6 +394,9 @@ def run(project, f, role, receipt, disputed=None, prompt=None):
     detail = (f"run {entry['run']}: parked {disputed}" if role == "refuter" and parked_by_refuter else
               f"run {entry['run']}: dismissed {disputed}" if role == "refuter" and passed else
               f"run {entry['run']}: upheld {disputed}" if role == "refuter" else
+              f"run {entry['run']}: {len(blocking)} blocking, {to_refuter} more blocking to the refuter,"
+              f" {len(entry['findings'])} findings"
+              if role == "security" and to_refuter else
               f"run {entry['run']}: {len(blocking)} blocking, {len(entry['findings'])} findings")
     receipt.record(step, passed, f.patch_id, detail, ms, cost_usd=meta.get("cost_usd"),
                    output=f"{role}: {data['summary']}\n" + "\n".join(

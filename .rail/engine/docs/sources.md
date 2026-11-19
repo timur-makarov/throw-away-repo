@@ -29,7 +29,8 @@ answers with an `agent_task` whose brief holds:
   file it with `rail add FILE`; set its `external_id` to `NAME#KEY`, where KEY names the underlying problem,
   so the same problem found on a later run gets the same key; when nothing is worth a ticket, file none.
 
-When `max_open` tickets are open, it says so and `fetch` doesn't run. When `fetch` fails or times out, the
+When `max_open` tickets are open, it says so and `fetch` doesn't run. When `fetch` prints nothing, or
+an empty JSON list, there is nothing to file and no agent task is given. When `fetch` fails or times out, the
 answer carries the failure and nothing is filed. `rail source` with no name lists the sources, each with its
 open tickets and `max_open`.
 

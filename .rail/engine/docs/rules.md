@@ -19,6 +19,7 @@ fix = "Create migrations with make migration."
 ```
 
 - `fix` is printed to the agent when the rule breaks.
+- `why` is a note for whoever reads the config, such as the ticket that added the rule. The engine prints it nowhere.
 - `allow` lists paths the rule skips.
 - A rule prevents mistakes; real dependency analysis belongs in `verify`, with any checker the project likes.
 - A finding a rule already covers is not a review finding.

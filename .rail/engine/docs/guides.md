@@ -13,10 +13,10 @@ situation and the path.
 
 | Situation | When | Default guide |
 |---|---|---|
-| `start` | The first `IMPLEMENT` brief of a claimed ticket, once per ticket | `rail-build`, which ends with `rail-self-check` |
+| `start` | The first `IMPLEMENT` brief of a claimed ticket, once per ticket | `rail-build` |
 | `stuck` | A step failed the same way twice in a row (the same `signature`) | `rail-debug` |
 | `findings` | A review left findings to answer | `rail-findings` |
-| `conflict` | A rebase stopped on a conflict in the ticket's worktree (`REBASING`) | `rail-conflict` |
+| `conflict` | A ship failed at `rebase`, or a rebase is stopped on a conflict in the ticket's worktree (`REBASING`) | `rail-conflict` |
 | `contract` | A ticket came in as a request and needs its contract | `rail-blast-radius` |
 | `split` | Ship offered a split: an AUTO change is over `[size] cap` | `rail-slice` |
 | `setup` | The init task | `rail-verify` |
@@ -32,14 +32,12 @@ situation and the path.
 
 ## Skills a person starts
 
-The pages are Claude Code skills in `.claude/skills/`, so a session with no ticket can use them too. Four
+The pages are Claude Code skills in `.claude/skills/`, so a session with no ticket can use them too. Three
 are for the time before a ticket exists, with a person present. Each is optional, and stopping after any of
 them is a complete outcome.
 
 | Skill | Use it when | It produces |
 |---|---|---|
-| `rail-clarity` | The person is not sure what to ask for | The real goal, in a few lines |
-| `rail-deepen` | The request is clear but shallow | A rewritten request and candidate checks |
 | `rail-blast-radius` | The change touches existing code | Scope, tier and expected size |
 | `rail-grill` | The request should become a ticket | The ticket, filed (`rail docs grill`) |
 | `rail-slice` | The work is more than one ticket | Several tickets with their order |

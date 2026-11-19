@@ -10,8 +10,7 @@ the same failure look new.
 
 `[retry] budget` (2 by default) counts the failures in a row at one step with the same signature. When a
 step fails the same way twice, the consult pack advises once, and you get one more attempt. If that fails
-too, whatever its output, the ticket waits for a person. Without the pack, it waits for a person at the
-budget. A failure whose signature differs from the last failure at that step is progress: the count of
+too, whatever its output, the ticket waits for a person. When there is no pack, it waits for a person at the budget. A failure whose signature differs from the last failure at that step is progress: the count of
 same failures starts again at 1.
 
 `[retry] cap` (5 by default) bounds the rest: after that many failed attempts at one step, whatever their
@@ -34,8 +33,10 @@ tool to go on, and open a ticket so that `[commands] provision` (or `setup`) ins
 
 Consult asks a different model for advice when you are stuck. Its brief is the ticket, the diff and the
 failing step's raw output, plus one question; your own story is left out. It answers `proceed`, `change`
-or `stop`, and the engine keeps the advice in `.rail/journal/NN-advice.md`. It is read-only, never a gate,
-and at most three run per ticket. Ask it yourself with `rail consult NN "question"`.
+or `stop`, and the engine keeps the advice in `.rail/journal/NN-advice.md`. It is read-only and never
+checks the change, and at most three run per ticket. Every verdict is advice, `stop` too: you still get the one attempt after
+it. The advice given at the budget is in the answer of
+`rail advance` and, until the next attempt, in the brief of `rail next`, so a fresh worker gets it too. Ask it yourself with `rail consult NN "question"`.
 
 ## Waits
 

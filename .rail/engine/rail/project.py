@@ -391,13 +391,17 @@ class Project:
                 return False
         return False
 
-    def take_id(self, start, build, label=""):
+    def take_id(self, start, build, label="", key=None):
         """Take the next free ID at or above `start`. `build(nn)` makes the ticket's first commit.
 
         With a remote, the ID is taken by moving the counter branch one commit forward with a plain push. Git
         accepts only a fast-forward, so when two clones try at once one push is refused, and that clone reads the
         counter again and takes the next ID. One branch holds every ID: a cloud session can't delete branches, so a
         branch per ID would stay for ever.
+
+        `key` is the request the ticket is made for (an issue's external id). It goes into the ID's commit, and an
+        ID is not taken for a key another ID already holds: two sessions that take the same issue in at once push
+        to the same counter, so only one of them gets a ticket. Returns (None, None) then.
         """
         nn = start
         if self.remote:
@@ -405,10 +409,15 @@ class Project:
                 raise RailError("can't reach the remote to take a ticket ID; try again online", code="UNAVAILABLE")
             empty = gitx.git(["mktree"], self.root, input="").stdout.strip()
             for _ in range(100):
-                tip, last, _ = self.counter(fetch=True)
+                tip, last, ids = self.counter(fetch=True)
+                if key:
+                    dropped = self.dropped_marks()
+                    if any(f"\nkey: {key}" in f"\n{body}" and held not in dropped for held, body in ids.items()):
+                        return None, None
                 nn = max(start, last + 1)
                 parent = ["-p", tip] if tip else []
-                marker = gitx.out(["commit-tree", empty, *parent, "-m", f"rail id {nn}", "-m", label], self.root)
+                marker = gitx.out(["commit-tree", empty, *parent, "-m", f"rail id {nn}", "-m", label,
+                                   *(["-m", f"key: {key}"] if key else [])], self.root)
                 result = gitx.push(self.root, self.remote, f"{marker}:refs/heads/{IDS_BRANCH}")
                 if result == "ok":
                     gitx.git(["update-ref", f"refs/remotes/{self.remote}/{IDS_BRANCH}", marker], self.root, check=False)
