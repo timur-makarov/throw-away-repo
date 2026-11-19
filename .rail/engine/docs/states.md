@@ -23,7 +23,8 @@ With a pull request, a conflict with the base or a red required check returns a 
 Any state can wait for a person: `owner` is `human`, and the brief says what is needed. The engine labels
 the ticket's pull request `rail:needs-you`. One act continues any wait: the label `rail:go` on the pull
 request, or `rail accept NN "note"`. The note, and any comments the person wrote on the pull request during
-the wait, go into the agent's next brief. A person can hold any ticket by adding `rail:needs-you` by hand.
+the wait, go into the agent's next brief. A person can hold any ticket by adding the label `rail:hold`. The engine never
+sets that one, and never reads its own `rail:needs-you` as a hold.
 
 A pull request merged before its ticket shipped doesn't make the ticket `merged`. It counts as the
 person's approval: `rail next` records it, starts the branch again from the base, and opens a new pull

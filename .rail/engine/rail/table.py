@@ -294,13 +294,11 @@ ROWS = [
      lambda f: f"The refuter upheld {_join(f.ledger.disputed_again())} on ticket {f.id}, and the agent still disputes it."
                f" A person decides: rail answer {f.id} F1 declined \"why\" --owner, rail answer {f.id} F1 parked"
                f" \"why\" --owner when this change didn't cause it, or rail accept {f.id} \"how to fix it\"."),
-    # Before HOLD: the engine labels every wait rail:needs-you, and this one would then read as a person's hold.
     ("MERGE_FAILED",       "human", "human_wait",  lambda f: f.state == "merge-ready" and _merge_stale(f),
      lambda f: f"The merge of {_pr(f)} was requested and hasn't landed. A person looks at the pull request, then"
                f" continues: rail accept {f.id}." + _go(f)),
-    ("HOLD",               "human", "human_wait",  lambda f: "rail:needs-you" in f.labels
-                                                   and not (f.state == "merge-ready" and not f.auto),
-     lambda f: f"A person holds ticket {f.id} with the label rail:needs-you on {_pr(f)}. They continue it with the"
+    ("HOLD",               "human", "human_wait",  lambda f: "rail:hold" in f.labels,
+     lambda f: f"A person holds ticket {f.id} with the label rail:hold on {_pr(f)}. They continue it with the"
                f" label rail:go, or: rail accept {f.id} \"note\""),
     # A claim protects work in flight. The waits above show from any session, and a shipped ticket (in CI, ready to
     # merge) needs no claim: the rows below move it from whichever session looks.
@@ -352,7 +350,9 @@ ROWS = [
      lambda f: f"rail next --ticket {f.id}"),
     ("CI_WAIT",            "none",  "rest",        lambda f: f.state == "in-ci",
      lambda f: f"Ticket {f.id} shipped; CI runs on {_pr(f)}." if f.pushed else
-               f"Ticket {f.id} shipped; its branch isn't pushed to {_pr(f)} yet: run rail advance {f.id}."),
+               f"Ticket {f.id} shipped; its branch isn't pushed to {_pr(f)} yet: run rail advance {f.id}. If that answer"
+               " has a `push` step that failed, the remote refuses the push: do what the step says, and don't run"
+               " rail advance again until the two branches agree."),
     ("MERGE_REQUESTED",    "none",  "rest",        lambda f: f.state == "merge-ready" and _merge_requested(f),
      lambda f: f"The merge of {_pr(f)} is requested; rail next sees it on the base branch once GitHub lands it."),
     ("MERGE",              "agent", "script",      lambda f: f.state == "merge-ready" and (f.auto or f.merge_approved)

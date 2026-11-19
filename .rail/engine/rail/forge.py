@@ -12,7 +12,8 @@ from . import gitx, util
 LABELS = {
     "rail": ("0e8a16", "Rail: an issue for rail intake to turn into a ticket"),
     "rail:go": ("1d76db", "Rail: a person approves or continues this ticket"),
-    "rail:needs-you": ("d93f0b", "Rail: this ticket waits for a person"),
+    "rail:needs-you": ("d93f0b", "Rail: this ticket waits for a person"),  # the engine sets it and never reads it
+    "rail:hold": ("b60205", "Rail: a person stopped this ticket; rail:go continues it"),  # only a person sets it
 }
 
 # Whose comments speak for the repository: those of people who can push to it. GitHub gives every comment an
@@ -148,7 +149,7 @@ def doctor_checks(project, repo):
         found.append(("labels", False, str(e)))
         return found
     missing = [name for name in LABELS if name not in names]
-    found.append(("labels", not missing, "rail, rail:go and rail:needs-you exist" if not missing
+    found.append(("labels", not missing, "rail, rail:go, rail:needs-you and rail:hold exist" if not missing
                   else f"missing labels: {', '.join(missing)}; rail init creates them"))
     return found
 
