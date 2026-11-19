@@ -1,0 +1,2 @@
+{"v":1,"at":"2026-11-19T13:21:27Z","ticket":"25","event":"requested","via":"sweep","channel":"engine","grilled":false,"assumed":0,"external_id":"sweep#0d36e31e2f0c"}
+{"v":1,"at":"2026-11-19T13:21:27Z","ticket":"25","event":"accepted","by":"engine","via":"lint","tier":"AUTO","contract":"d629cb6859c5","done":"a0bac389f806","scope_paths":[".rail/journal/**"]}
