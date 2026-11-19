@@ -17,4 +17,9 @@ def summary(order_id):
     order = store.get_order(order_id)
     if order is None:
         return None
-    return {"id": order["id"], "total": total(order), "lines": len(order["lines"])}
+    return {
+        "id": order["id"],
+        "total": total(order),
+        "lines": len(order["lines"]),
+        "status": order.get("status", "open"),
+    }
