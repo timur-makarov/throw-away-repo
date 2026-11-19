@@ -1,0 +1,31 @@
+{
+  "schema": "review/v1",
+  "ticket": "25",
+  "runs": [
+    {
+      "run": 1,
+      "role": "sweep",
+      "patch_id": "",
+      "head": "85b25d4e4111",
+      "tier": "AUTO",
+      "at": "2026-11-19T13:21:47Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.2539061,
+      "summary": "I read docs/api.md against shop/api.py, shop/export.py and shop/auth.py. The CSV columns and the error answer match the code. The \"Who may call\" sentence does not. I did not review the vendored Rail engine under .rail/; it is a third-party update.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": "docs/api.md",
+          "line": 15,
+          "claim": "The new text says only `api.delete_product` asks `shop/auth.py`, which is false. `api.rename_product` calls `auth.allowed(request, \"rename\")` and `api.delete_customer` calls `auth.allowed(request, \"delete\")`. Neither handler, nor `delete_product`, is in the handler table, so a reader cannot learn which handlers are role-gated. The new section also sits between the table and the `export.orders_csv()` paragraph, so the export paragraph now reads as part of 'Who may call'.",
+          "evidence": {
+            "command": "grep -n 'auth.allowed' shop/api.py",
+            "output": "delete_product: auth.allowed(request, \"delete\")\nrename_product: auth.allowed(request, \"rename\")\ndelete_customer: auth.allowed(request, \"delete\")"
+          },
+          "check": "A doc-lint test that every public handler in shop/api.py is named in docs/api.md, and that each handler calling auth.allowed is listed as gated.",
+          "id": "F1"
+        }
+      ]
+    }
+  ]
+}
