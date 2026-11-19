@@ -304,7 +304,10 @@ class Facts:
             tip = gitx.rev(t.ref, project.root)
             self.pushed = self.pr["head"]["sha"] == tip
             self.conflict = self.pr.get("mergeable_state") == "dirty"
-            self.behind = self.pr.get("mergeable_state") == "behind"
+            # GitHub takes a while to see a push: a branch that already holds the base's tip is not behind, whatever
+            # the pull request still says. Without this the engine rebases it again and again in one command.
+            self.behind = (self.pr.get("mergeable_state") == "behind" and not gitx.ok(
+                ["merge-base", "--is-ancestor", gitx.rev(project.base_ref, project.root), tip], project.root))
             if self.pushed:
                 self.ci, self.ci_failing = self.forge.checks(tip)
             if self.conflict or self.ci == "red":
