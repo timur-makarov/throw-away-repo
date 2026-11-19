@@ -1,0 +1,2 @@
+{"v":1,"at":"2026-11-19T13:22:28Z","ticket":"26","event":"requested","via":"add","channel":"session","grilled":false,"assumed":2}
+{"v":1,"at":"2026-11-19T13:22:28Z","ticket":"26","event":"accepted","by":"engine","via":"lint","tier":"AUTO","contract":"04d76d869d06","done":"8fccb2af98d0","scope_paths":["docs/api.md","tests/test_docs.py"]}
