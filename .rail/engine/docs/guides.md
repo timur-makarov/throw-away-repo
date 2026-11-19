@@ -27,8 +27,7 @@ situation and the path.
 - A page that isn't there, in the ticket's worktree or at the root, names nothing; `rail doctor` lists it.
 - The engine records the first time it names each guide for a ticket as a `guided` event in the ticket's
   journal. While a rebase is stopped it writes nothing, so `conflict` has no event, and the init task has no
-  ticket. `rail stats` counts failed steps and review runs for tickets with and without the `start` guide.
-  That is how you tell whether a guide earns its place.
+  ticket. `rail stats` says how many merged tickets each guide was named for.
 
 ## Skills a person starts
 
@@ -61,4 +60,4 @@ After `rail init` every page is the project's own. These rules keep a page usefu
   *inferred*, with the reason. "Not tested: X, because Y" is information; silence looks like a pass.
 - **Keep it short.** About a hundred lines. Teach what the model does not already do; cut the rest.
 - **Change it on evidence.** Run a few real tickets with the old page and the new one, and keep the change
-  only when `rail stats` shows fewer failed steps or review runs.
+  only when the new one does better: fewer failed steps, fewer review runs, the right result more often.

@@ -7,5 +7,9 @@ Read `.rail/engine/docs/grill.md` (or run `rail docs grill`) and follow it. In t
 ticket with `rail add FILE`, from a file outside the repository, with `Channel: session` in its `## Grilling`
 section.
 
+When the request is about data, look at the real data too before you ask (the stored records, a sample of the
+input, the output the code makes today), so you don't ask the person what you can see there and your checks fit
+the data as it really is.
+
 Two other skills can come before this one. Each is optional: `rail-blast-radius` for the scope and tier of
 a change to existing code, and `rail-slice` when the work is more than one ticket.

@@ -7,7 +7,8 @@ A different model advises the agent when it is stuck: at the retry cap, or on re
   `.rail/journal/NN-advice.md`.
 - **Brief:** the ticket, the diff and the raw output of the failing step, plus one question. The
   agent's own story is left out.
-- **Answer:** `proceed`, `change` or `stop`, with a few sentences of advice.
+- **Answer:** `proceed`, `change` or `stop`, with a few sentences of advice. `stop` is for a product decision
+  the ticket leaves open; a check that is plainly wrong is not one, since the agent can fix it with `rail amend`.
 - **Rules:** read-only, never counted as review, at most three per ticket. It never checks the change, and
   every verdict is advice: after a `stop` the agent still gets its one attempt.
 - **Settings:** `[consult] command` in `.rail/config.toml`, run with the brief on stdin. Point it at

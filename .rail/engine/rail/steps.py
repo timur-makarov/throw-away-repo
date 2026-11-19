@@ -11,6 +11,7 @@ from pathlib import Path
 from . import doclint, gitx, rules
 from .project import event, events_path, ticket_path
 from .state import raised_tier
+from .util import cloud
 from .ticket import Ticket, lint, rank
 from .util import MISSING_HELP, could_not_run, match_any, minutes_since, run_shell, tail
 
@@ -458,7 +459,9 @@ def remove_ticket(project, t):
             t.branch = None
         else:
             leftovers.append({"kind": "branch", "ref": t.branch, "reason": "git refused to delete it"})
-    if t.remote_branch and project.remote:
+    if t.remote_branch and project.remote and not cloud():
+        # Not from a cloud session: its git access can't delete a branch, and GitHub's "automatically delete head
+        # branches" does it there (rail doctor checks that setting).
         result = gitx.push(project.root, project.remote, f":refs/heads/{t.remote_branch}") if project.online else "unavailable"
         if result == "ok":
             t.remote_branch = None

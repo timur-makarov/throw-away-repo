@@ -300,6 +300,15 @@ class Project:
             forge.expire()  # the pull request's head moved
             if os.path.exists(note):
                 os.remove(note)
+        elif result == "rejected" and os.path.exists(note):
+            # Another session moved the remote branch after the note was written: the note can never match again,
+            # and kept, it would refuse every later push from this clone.
+            gitx.git(["fetch", "--quiet", self.remote, f"+refs/heads/{branch}:refs/remotes/{self.remote}/{branch}"],
+                     self.root, check=False)
+            with open(note) as f:
+                noted = f.read().strip()
+            if gitx.rev(f"refs/remotes/{self.remote}/{branch}", self.root) != noted:
+                os.remove(note)
         return result
 
     def append_events(self, t, events, message, lease=None, files=None):

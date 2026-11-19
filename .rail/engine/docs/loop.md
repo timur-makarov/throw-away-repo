@@ -51,7 +51,11 @@ to stop work on it.
 `Check:` line of the Done Contract once in the new worktree, which still holds the base branch, the same way
 ship runs it. It records each result in a `base_checks` event: `red`, `green`, `could_not_run` or `timed_out`.
 Then it resets the worktree to what it was, because a check may write files. A check that is already green on
-the base can't show that the work was done, and `rail stats` counts how often every check was. This is never
+the base can't show that the work was done, and `rail stats` counts how often every check was. When every check
+was green, the IMPLEMENT brief says so and asks for a `Check:` line that fails now, added with `rail amend`
+(`rail docs contract`); it stops saying so once the contract's checks differ from the ones run on the base. A new
+test in a file an old check already runs does not count: the contract stays the same. The reviewer is told as
+well (`rail docs review`). This is never
 a gate: the result fails nothing, spends no attempt, and changes neither the ticket's state nor its owner, and
 a failure inside it doesn't stop `next`. It runs once per ticket: not on a resume, not on a takeover, and not
 for a ticket with no `Check:` line yet. `[commands] base_checks = false` switches it off. An adopted ticket

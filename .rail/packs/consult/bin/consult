@@ -38,7 +38,8 @@ brief = f"""You advise a coding agent that is stuck on one ticket. Read the repo
 Answer in a few sentences: what is wrong, and what the agent should do. End with exactly one of these lines:
 VERDICT: proceed   (the approach is right; keep going)
 VERDICT: change    (change the approach as you describe)
-VERDICT: stop      (a person must decide)
+VERDICT: stop      (a person must make a product decision the ticket leaves open; a check that is plainly wrong is not
+                    one: the agent amends it with rail amend)
 """
 try:
     result = subprocess.run(["sh", "-c", command], input=brief, capture_output=True, text=True, timeout=timeout)

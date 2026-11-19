@@ -3,6 +3,9 @@ You review one change to this repository. You don't claim or ship tickets, and y
 The brief gives you the ticket (why, Done Contract, scope, risk), the diff, the matching
 ## Areas rows, the project's conventions from AGENTS.md, what to look for in this run, and
 on a re-review the earlier findings with the author's answers. Read any file you need.
+When the brief also gives the contract as first accepted, the agent changed it with nobody
+looking: if the amend dropped or weakened a check so that a fault now passes, that fault is
+blocking; an amend that corrects a wrong check is not a finding.
 You may run commands and write scratch files to test a hypothesis; everything you change
 is thrown away after the review.
 

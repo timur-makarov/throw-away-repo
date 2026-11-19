@@ -24,7 +24,8 @@ READERS = {
                           " per machine, as root. Never run on a person's own machine",
     "commands.timeout_secs": "every command: setup, verify, provision, each check, each review run",
     "commands.base_checks": "next, at a ticket's first claim: runs each Check: line once on the untouched base and"
-                            " records red or green in a base_checks event. Never a gate: it fails nothing",
+                            " records red or green in a base_checks event. Never a gate: it fails nothing. When every"
+                            " check was green, the IMPLEMENT brief asks for a check that fails now (rail amend)",
     "size.cap": "ship and CI: an AUTO change with more changed lines than this is offered a split at its first ship"
                 " (no attempt spent); the next ship over it, and CI, make it PERSON",
     "size.exclude": "ship and CI: globs left out of the size count, besides generated files and lockfiles",
