@@ -2,3 +2,11 @@
 {"v":1,"at":"2026-11-19T13:22:28Z","ticket":"26","event":"accepted","by":"engine","via":"lint","tier":"AUTO","contract":"04d76d869d06","done":"8fccb2af98d0","scope_paths":["docs/api.md","tests/test_docs.py"]}
 {"v":1,"at":"2026-11-19T13:22:48Z","ticket":"26","event":"claimed","session":"24ee0f8f-d3b7-5b78-b2b8-f2b7c5fa003e","takeover":false,"session_url":"https://claude.ai/code/session_01QmWTTBGGjxd3bNgYLhRqpp"}
 {"v":1,"at":"2026-11-19T13:22:50Z","ticket":"26","event":"base_checks","base":"85bbf2ab00de","checks":[{"command":"python3 -m pytest -q tests/test_docs.py","result":"red"}]}
+{"v":1,"at":"2026-11-19T13:23:19Z","ticket":"26","event":"step","step":"ticket-lint","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-19T13:23:19Z","ticket":"26","event":"step","step":"assumptions","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-19T13:23:19Z","ticket":"26","event":"step","step":"scope","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-19T13:23:19Z","ticket":"26","event":"step","step":"rules","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-19T13:23:19Z","ticket":"26","event":"step","step":"size","status":"ran","result":"pass","patch_id":"","detail":"size 0/600"}
+{"v":1,"at":"2026-11-19T13:23:19Z","ticket":"26","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-19T13:23:19Z","ticket":"26","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"","detail":"exit 0","duration_ms":595}
+{"v":1,"at":"2026-11-19T13:23:19Z","ticket":"26","event":"step","step":"checks","status":"ran","result":"fail","patch_id":"","detail":"python3 -m pytest -q tests/test_docs.py: exit 4","duration_ms":157,"signature":"checks:e41e1f1a6421"}
