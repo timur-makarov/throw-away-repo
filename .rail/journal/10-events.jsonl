@@ -14,3 +14,4 @@
 {"v":1,"at":"2026-11-19T08:07:23Z","ticket":"10","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"21fb2d86346c0273cc063f4364ba776a5f42ffa5","detail":"python3 -m pytest -q","duration_ms":280}
 {"v":1,"at":"2026-11-19T08:07:23Z","ticket":"10","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"21fb2d86346c0273cc063f4364ba776a5f42ffa5","detail":"ruff check .","duration_ms":9}
 {"v":1,"at":"2026-11-19T08:07:23Z","ticket":"10","event":"shipped","patch_id":"21fb2d86346c0273cc063f4364ba776a5f42ffa5","head":"e2b5d1629b55","tier":"AUTO","size":7}
+{"v":1,"at":"2026-11-19T08:07:32Z","ticket":"10","event":"step","step":"review","status":"ran","result":"pass","patch_id":"21fb2d86346c0273cc063f4364ba776a5f42ffa5","detail":"run 1: 0 blocking, 0 findings","duration_ms":6307,"cost_usd":0.0456017}
