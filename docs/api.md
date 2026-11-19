@@ -13,3 +13,12 @@ Each handler takes a request dict and returns a dict with a `status`.
 | `api.update_customer` | `{"id": 1, "name", "email"}` | `{"status": 200, "customer": {...}}` with `name` and `email` replaced together and the id kept; a 400 with `error` when either is invalid (nothing changes), or a 404 |
 
 `export.orders_csv()` returns every order as CSV with the columns `id`, `customer_id`, `lines` and `total`: `customer_id` is empty when the order has none, `lines` is the number of lines, and `total` is in integer cents.
+
+## Error answers
+
+A handler does not raise on bad input. A failed call returns a 4xx `status` and an `error` text instead of the success fields:
+
+```python
+api.get_order({"id": 99999})
+# {"status": 404, "error": "no such order"}
+```
