@@ -1,0 +1,28 @@
+{
+  "schema": "review/v1",
+  "ticket": "1",
+  "runs": [
+    {
+      "run": 1,
+      "role": "review",
+      "patch_id": "80bde2593cd4a360a1d85b2e2dfdc6d22ec49219",
+      "head": "dcf477d03daa",
+      "tier": "PERSON",
+      "at": "2026-11-19T06:09:22Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.0487556,
+      "summary": "Ran the export tests (2 pass). Checked the diff against the Done Contract and the code in shop/orders.py. The finance_columns test covers the header, the empty customer_id, the line count and the cent totals.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": "docs/api.md",
+          "line": 15,
+          "claim": "The doc still says the export has only the columns `id` and `total`. The change makes that wrong. The ticket defers the fix to a follow-up and docs/ is outside scope_paths, so this is safe to merge, but the follow-up ticket must exist.",
+          "check": "A test that compares the header in docs/api.md with the header export.orders_csv() writes.",
+          "id": "F1"
+        }
+      ],
+      "needs_person": "The CSV column layout changes: `total` moves from column 2 to column 4. The ticket says this was confirmed, but it changes what finance receives."
+    }
+  ]
+}
