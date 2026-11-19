@@ -10,3 +10,12 @@
 {"v":1,"at":"2026-11-19T13:23:19Z","ticket":"26","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":""}
 {"v":1,"at":"2026-11-19T13:23:19Z","ticket":"26","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"","detail":"exit 0","duration_ms":595}
 {"v":1,"at":"2026-11-19T13:23:19Z","ticket":"26","event":"step","step":"checks","status":"ran","result":"fail","patch_id":"","detail":"python3 -m pytest -q tests/test_docs.py: exit 4","duration_ms":157,"signature":"checks:e41e1f1a6421"}
+{"v":1,"at":"2026-11-19T13:23:49Z","ticket":"26","event":"step","step":"ticket-lint","status":"ran","result":"pass","patch_id":"88e92c7f685e49b5eb5256a69b5ec36be7cc1471"}
+{"v":1,"at":"2026-11-19T13:23:49Z","ticket":"26","event":"step","step":"assumptions","status":"ran","result":"pass","patch_id":"88e92c7f685e49b5eb5256a69b5ec36be7cc1471"}
+{"v":1,"at":"2026-11-19T13:23:49Z","ticket":"26","event":"step","step":"scope","status":"ran","result":"pass","patch_id":"88e92c7f685e49b5eb5256a69b5ec36be7cc1471"}
+{"v":1,"at":"2026-11-19T13:23:49Z","ticket":"26","event":"step","step":"rules","status":"ran","result":"pass","patch_id":"88e92c7f685e49b5eb5256a69b5ec36be7cc1471"}
+{"v":1,"at":"2026-11-19T13:23:49Z","ticket":"26","event":"step","step":"size","status":"ran","result":"pass","patch_id":"88e92c7f685e49b5eb5256a69b5ec36be7cc1471","detail":"size 56/600"}
+{"v":1,"at":"2026-11-19T13:23:49Z","ticket":"26","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":"88e92c7f685e49b5eb5256a69b5ec36be7cc1471"}
+{"v":1,"at":"2026-11-19T13:23:49Z","ticket":"26","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"88e92c7f685e49b5eb5256a69b5ec36be7cc1471","detail":"exit 0","duration_ms":548}
+{"v":1,"at":"2026-11-19T13:23:49Z","ticket":"26","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"88e92c7f685e49b5eb5256a69b5ec36be7cc1471","detail":"python3 -m pytest -q tests/test_docs.py","duration_ms":150}
+{"v":1,"at":"2026-11-19T13:23:49Z","ticket":"26","event":"shipped","patch_id":"88e92c7f685e49b5eb5256a69b5ec36be7cc1471","head":"1883345e9dff","tier":"AUTO","size":56}
