@@ -3,3 +3,12 @@
 {"v":1,"at":"2026-11-19T08:14:30Z","ticket":"17","event":"accepted","by":"engine","via":"lint","tier":"AUTO","contract":"874697d03d74","done":"be3589146d37","scope_paths":["README.md"]}
 {"v":1,"at":"2026-11-19T08:14:33Z","ticket":"17","event":"claimed","session":"f6037695-e76a-54e1-bc18-67c7cd4d427a","takeover":false,"session_url":"https://claude.ai/code/session_01QmWTTCu8p7pwcGYryrxd8e"}
 {"v":1,"at":"2026-11-19T08:14:36Z","ticket":"17","event":"base_checks","base":"4e2d3585a259","checks":[{"command":"grep -q '^## Running the tests' README.md && grep -q 'python3 -m pytest -q' README.md && grep -q 'ruff check \\.' README.md","result":"red"}]}
+{"v":1,"at":"2026-11-19T08:15:03Z","ticket":"17","event":"step","step":"ticket-lint","status":"ran","result":"pass","patch_id":"e44135ca5d4908103e8d8a4de60f308edc0e39c4"}
+{"v":1,"at":"2026-11-19T08:15:03Z","ticket":"17","event":"step","step":"assumptions","status":"ran","result":"pass","patch_id":"e44135ca5d4908103e8d8a4de60f308edc0e39c4"}
+{"v":1,"at":"2026-11-19T08:15:03Z","ticket":"17","event":"step","step":"scope","status":"ran","result":"pass","patch_id":"e44135ca5d4908103e8d8a4de60f308edc0e39c4"}
+{"v":1,"at":"2026-11-19T08:15:03Z","ticket":"17","event":"step","step":"rules","status":"ran","result":"pass","patch_id":"e44135ca5d4908103e8d8a4de60f308edc0e39c4"}
+{"v":1,"at":"2026-11-19T08:15:03Z","ticket":"17","event":"step","step":"size","status":"ran","result":"pass","patch_id":"e44135ca5d4908103e8d8a4de60f308edc0e39c4","detail":"size 2/600"}
+{"v":1,"at":"2026-11-19T08:15:03Z","ticket":"17","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":"e44135ca5d4908103e8d8a4de60f308edc0e39c4"}
+{"v":1,"at":"2026-11-19T08:15:04Z","ticket":"17","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"e44135ca5d4908103e8d8a4de60f308edc0e39c4","detail":"exit 0","duration_ms":648}
+{"v":1,"at":"2026-11-19T08:15:04Z","ticket":"17","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"e44135ca5d4908103e8d8a4de60f308edc0e39c4","detail":"grep -q '^## Running the tests' README.md && grep -q 'python3 -m pytest -q' README.md && grep -q 'ruff check \\.' README.md","duration_ms":5}
+{"v":1,"at":"2026-11-19T08:15:04Z","ticket":"17","event":"shipped","patch_id":"e44135ca5d4908103e8d8a4de60f308edc0e39c4","head":"18e82a3cefc0","tier":"AUTO","size":2}
