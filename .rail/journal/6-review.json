@@ -1,0 +1,51 @@
+{
+  "schema": "review/v1",
+  "ticket": "6",
+  "runs": [
+    {
+      "run": 1,
+      "role": "review",
+      "patch_id": "e81f70c66069c3dfc2ab51c828bf83bb7f2578bf",
+      "head": "6514690931d7",
+      "tier": "PERSON",
+      "at": "2026-11-19T06:12:07Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.0286673,
+      "summary": "I read the diff and shop/auth.py, then ran tests/test_products.py (5 passed) and ruff (clean). The three Done Contract checks are met. The 403-before-404 order and the unchanged auth.py match the ticket.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": "shop/api.py",
+          "line": 30,
+          "claim": "`isinstance(product_id, int)` also accepts booleans, because `bool` is a subclass of `int`. A request `{\"id\": True, \"role\": \"admin\"}` therefore deletes product 1 instead of answering 404. No test covers it.",
+          "check": "Add `True` to the bad-id loop in test_delete_product_missing_is_404_for_a_bad_id_too, and reject bool in the handler.",
+          "id": "F1"
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "role": "review",
+      "patch_id": "d8dc9b39a505b5052a0d9374b25e0c85dff9d28c",
+      "head": "a46ae9fa85e1",
+      "tier": "PERSON",
+      "at": "2026-11-19T06:12:50Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.0274191,
+      "summary": "I ran the new tests (5 pass) and ruff (clean). I checked the handler against the Done Contract, AGENTS.md and the earlier finding F1. F1 is fixed: `type(product_id) is not int` makes `True` answer 404, and a test covers it. The permission check runs before the lookup, `shop/auth.py` is untouched, and the store function follows the store conventions.",
+      "findings": []
+    },
+    {
+      "run": 3,
+      "role": "security",
+      "patch_id": "d8dc9b39a505b5052a0d9374b25e0c85dff9d28c",
+      "head": "d0ee973af764",
+      "tier": "PERSON",
+      "at": "2026-11-19T06:13:03Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.0277422,
+      "summary": "I read the diff and shop/auth.py. The handler calls auth.allowed(request, \"delete\") before any lookup, so non-admins and requests with no role get 403 whether or not the product exists. The id is type-checked as an int, with bool rejected by the `type(...) is int` test. The store delete is a plain dict pop, so there is no injection surface. I found no exploitable problem introduced here. The role comes from the request dict itself; that is how the existing project works (auth.allowed reads request.get(\"role\")), so I did not report it as a finding.",
+      "findings": []
+    }
+  ]
+}

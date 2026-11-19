@@ -36,6 +36,10 @@ def list_products():
     return [dict(p) for _, p in sorted(_PRODUCTS.items())]
 
 
+def delete_product(product_id):
+    return _PRODUCTS.pop(product_id, None) is not None
+
+
 def save_code(code, percent):
     _CODES[code] = percent
 
