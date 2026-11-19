@@ -1,0 +1,39 @@
+{
+  "schema": "review/v1",
+  "ticket": "13",
+  "runs": [
+    {
+      "run": 1,
+      "role": "review",
+      "patch_id": "94a93b768d87b2b59537b19ab50f8ed23f6ba427",
+      "head": "0aaf657e7705",
+      "tier": "AUTO",
+      "at": "2026-11-19T08:16:53Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.0247143,
+      "summary": "I read shop/export.py and store.list_customers. I ran tests/test_export.py, and all 6 tests pass. The diff meets both Done Contract items: the header row, one row per customer, and the sort by id. Nothing blocks the merge. I raised one advisory about spreadsheet formulas in names.",
+      "findings": [
+        {
+          "severity": "advisory",
+          "file": "shop/export.py",
+          "line": 22,
+          "claim": "customers_csv writes the free-text customer name unescaped. A customer named `=HYPERLINK(...)` or `=cmd|...` becomes a formula when Finance opens the CSV in Excel (CSV formula injection). The orders CSV has no free-text field, so this is the first export with the problem. Consider prefixing values that start with = + - @ with a quote.",
+          "check": "A test that saves a customer named \"=1+1\" and asserts the exported cell does not start with \"=\".",
+          "id": "F1"
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "role": "review",
+      "patch_id": "29e615299452716746f848b0d5bccd1f23444016",
+      "head": "c477f9f31513",
+      "tier": "AUTO",
+      "at": "2026-11-19T08:17:57Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.024685299999999997,
+      "summary": "I ran the test file, the second Done Contract command and ruff. All three pass. I read the diff against F1: `_safe` prefixes names that start with a formula character, and a test covers it. The `id` column is an integer, so it needs no escaping.",
+      "findings": []
+    }
+  ]
+}

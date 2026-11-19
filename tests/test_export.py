@@ -1,3 +1,6 @@
+import csv
+import io
+
 from shop import export, store
 
 
@@ -36,3 +39,22 @@ def test_the_csv_total_includes_the_discount_code():
 def test_empty_store_still_returns_the_header_row():
     store.reset()
     assert export.orders_csv() == "id,customer_id,lines,total\r\n"
+
+
+def test_customers_csv_has_a_header_and_one_row_per_customer():
+    store.reset()
+    store.save_customer({"id": 2, "name": "Bob"})
+    store.save_customer({"id": 1, "name": "Ann"})
+    assert export.customers_csv().splitlines() == ["id,name", "1,Ann", "2,Bob"]
+
+
+def test_customers_csv_with_no_customers_is_just_the_header():
+    store.reset()
+    assert export.customers_csv() == "id,name\r\n"
+
+
+def test_customers_csv_neutralizes_formula_names(monkeypatch):
+    monkeypatch.setattr(store, "list_customers", lambda: [{"id": 1, "name": "=HYPERLINK(\"x\")"}, {"id": 2, "name": "@a"}])
+    rows = list(csv.reader(io.StringIO(export.customers_csv())))
+    assert rows[1][1] == "'=HYPERLINK(\"x\")"
+    assert rows[2][1] == "'@a"
