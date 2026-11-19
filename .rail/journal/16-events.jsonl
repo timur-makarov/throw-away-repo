@@ -3,3 +3,13 @@
 {"v":1,"at":"2026-11-19T08:13:29Z","ticket":"16","event":"accepted","by":"engine","via":"lint","tier":"AUTO","contract":"0262fbd10553","done":"e3690643868b","scope_paths":["shop/export.py","tests/test_export.py"]}
 {"v":1,"at":"2026-11-19T08:19:00Z","ticket":"16","event":"claimed","session":"b540395d-9ceb-572f-be36-08a1135eb5c7","takeover":false,"session_url":"https://claude.ai/code/session_01QmWTT99vSi8fPCxYL78Gk6"}
 {"v":1,"at":"2026-11-19T08:19:04Z","ticket":"16","event":"base_checks","base":"3755723f2087","checks":[{"command":"python3 -m pytest -q tests/test_export.py -k customers","result":"green"},{"command":"python3 -m pytest -q tests/test_export.py","result":"green"}]}
+{"v":1,"at":"2026-11-19T08:19:50Z","ticket":"16","event":"step","step":"ticket-lint","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-19T08:19:50Z","ticket":"16","event":"step","step":"assumptions","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-19T08:19:50Z","ticket":"16","event":"step","step":"scope","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-19T08:19:50Z","ticket":"16","event":"step","step":"rules","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-19T08:19:50Z","ticket":"16","event":"step","step":"size","status":"ran","result":"pass","patch_id":"","detail":"size 0/600"}
+{"v":1,"at":"2026-11-19T08:19:50Z","ticket":"16","event":"step","step":"doc-lint","status":"ran","result":"pass","patch_id":""}
+{"v":1,"at":"2026-11-19T08:19:50Z","ticket":"16","event":"step","step":"verify","status":"ran","result":"pass","patch_id":"","detail":"exit 0","duration_ms":686}
+{"v":1,"at":"2026-11-19T08:19:51Z","ticket":"16","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"","detail":"python3 -m pytest -q tests/test_export.py -k customers","duration_ms":193}
+{"v":1,"at":"2026-11-19T08:19:51Z","ticket":"16","event":"step","step":"checks","status":"ran","result":"pass","patch_id":"","detail":"python3 -m pytest -q tests/test_export.py","duration_ms":204}
+{"v":1,"at":"2026-11-19T08:19:51Z","ticket":"16","event":"shipped","patch_id":"","head":"7fa4ca2475ba","tier":"AUTO","size":0}
