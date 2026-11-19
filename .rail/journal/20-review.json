@@ -1,0 +1,18 @@
+{
+  "schema": "review/v1",
+  "ticket": "20",
+  "runs": [
+    {
+      "run": 1,
+      "role": "review",
+      "patch_id": "eb05fea21478cd6c46dd2f4562ed2c85ad220688",
+      "head": "5b5800d1b01d",
+      "tier": "AUTO",
+      "at": "2026-11-19T10:52:44Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.04426239999999999,
+      "summary": "Ran the export tests (8 passed) and ruff (clean). The diff is a behaviour-preserving refactor: headers and rows are unchanged, and _safe is untouched. The new test covers the helper.",
+      "findings": []
+    }
+  ]
+}
