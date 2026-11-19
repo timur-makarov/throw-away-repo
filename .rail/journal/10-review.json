@@ -1,0 +1,18 @@
+{
+  "schema": "review/v1",
+  "ticket": "10",
+  "runs": [
+    {
+      "run": 1,
+      "role": "review",
+      "patch_id": "21fb2d86346c0273cc063f4364ba776a5f42ffa5",
+      "head": "6504e1e50454",
+      "tier": "AUTO",
+      "at": "2026-11-19T08:07:32Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.0456017,
+      "summary": "I read shop/export.py and ran the full test suite (32 passed) and ruff (clean). The new test's name contains \"empty\", so `-k empty` selects it. The export already writes the header before the loop, so the test pins existing behaviour and the docs sentence matches it.",
+      "findings": []
+    }
+  ]
+}

@@ -31,3 +31,8 @@ def test_the_csv_total_includes_the_discount_code():
     store.save_code("TEN", 10)
     store.save_order({"id": 1, "code": "TEN", "lines": [{"cents": 999, "quantity": 1}]})
     assert export.orders_csv().splitlines()[1] == "1,,1,899"
+
+
+def test_empty_store_still_returns_the_header_row():
+    store.reset()
+    assert export.orders_csv() == "id,customer_id,lines,total\r\n"
