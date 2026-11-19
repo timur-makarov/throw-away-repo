@@ -59,3 +59,13 @@ class Orders(unittest.TestCase):
         store.save_order({"id": 2, "lines": [{"cents": 999, "quantity": 1}]})
         self.assertEqual(api.get_order({"id": 1})["order"]["total"], 999)
         self.assertEqual(api.get_order({"id": 2})["order"]["total"], 999)
+
+    def test_status_defaults_to_open(self):
+        store.save_order(order(1))
+        self.assertEqual(api.get_order({"id": 1})["order"]["status"], "open")
+
+    def test_summary_shows_status_as_stored(self):
+        for n, status in enumerate(("open", "paid", "cancelled"), start=1):
+            store.save_order({**order(n), "status": status})
+            found = api.get_order({"id": n})["order"]
+            self.assertEqual(found, {"id": n, "total": 1000, "lines": 1, "status": status})
