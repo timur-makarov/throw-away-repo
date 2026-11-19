@@ -21,7 +21,7 @@ external_id = ""                   # "github#123" or "PROJ-123"
 - (what this ticket does not change)
 
 ## Assumptions
-- ASSUMED: (a fact the work rests on; after the claim, verify it and change ASSUMED to VERIFIED, or ask)
+- ASSUMED: (a fact the work rests on; after the claim, verify it and change ASSUMED to VERIFIED; if it can't be checked, decide it and write "decided, not checked:")
 
 ## Look at
 (written before ship: what a reader of the change should check)

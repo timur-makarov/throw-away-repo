@@ -41,8 +41,9 @@ READERS = {
     "consult.model": "the consult pack: the model consult runs on, set the same way as review.model",
     "claim.stale_minutes": "next: minutes without a journal event after which another session's work in flight is"
                            " taken to be abandoned and resumed. Keep it above your longest command",
-    "claim.save_minutes": "the save hooks and advance: work in flight is saved, and shows it is alive, at least this"
-                          " often while a session works",
+    "claim.save_minutes": "advance and rail save: a ticket with nothing to save and no pushed event for this long"
+                          " gets a saved event, the sign that a session is at work on it. How often the save hook"
+                          " runs is the -mmin number in the hook's own command in .claude/settings.json (10)",
     "worker.ladder": "next and advance: the model and effort an agent_task names for an AUTO ticket's work, as"
                      " model:effort, one rung per failed attempt at the step the ticket is failing. Empty names none",
     "worker.person_ladder": "next and advance: the same ladder for a PERSON ticket, which starts higher",

@@ -8,7 +8,8 @@ from .ticket import TIERS, Ticket, highest, lint
 from .util import globs_overlap, match_any, minutes_since
 
 OPEN = ("implementing", "reviewing", "in-ci", "merge-ready")  # claimed and not finished
-SHIP_STEPS = ("rebase", "ticket-lint", "assumptions", "scope", "rules", "migration", "size", "verify", "checks")
+SHIP_STEPS = ("rebase", "ticket-lint", "assumptions", "scope", "change", "rules", "migration", "size", "doc-lint", "verify",
+              "checks")
 
 
 def floor(project, scope):
@@ -101,9 +102,23 @@ class Facts:
         retry.budget times in a row; whatever the failures, retry.cap of them since it last passed wait for a person."""
         budget, cap = project.config["retry"]["budget"], project.config["retry"]["cap"]
         attempts, same, seen, consulted, since, failing = {}, {}, {}, {}, 0, None
+        passed = None    # a step whose last event passed: its counts reset once the run leaves that step
+
+        def settle():
+            # Each Check: line is its own event at the step 'checks'. A line that passes before a later line
+            # fails is no pass of the step, so a pass resets the counts only when no failure follows it.
+            if passed is not None:
+                attempts[passed] = same[passed] = 0
+                seen.pop(passed, None)
+                consulted.pop(passed, None)
+
         accepted_at = amended_at = shipped_at = continued_at = -1
+        self.amend_reason = ""
         for i, e in enumerate(events):
             kind = e.get("event")
+            if passed is not None and not (kind == "step" and e.get("step") == passed):
+                settle()
+                passed = None
             if kind == "continued" or (kind == "accepted" and e.get("by") == "person"):
                 # A person's act gives a fresh budget and a fresh cap, whether it continues a wait or approves.
                 attempts, same, seen, consulted, since = {}, {}, {}, {}, i
@@ -114,10 +129,10 @@ class Facts:
             elif kind == "step" and e.get("status") in ("ran", "could_not_run"):
                 step = e.get("step")
                 if e.get("result") == "pass":
-                    attempts[step] = same[step] = 0
-                    seen.pop(step, None)
-                    consulted.pop(step, None)
-                elif e.get("counted", True):
+                    passed = step
+                else:
+                    passed = None
+                if e.get("result") != "pass" and e.get("counted", True):
                     # The same failure as the last one at this step, or a new one, which is progress. An event with
                     # no signature, from an older engine, is the same failure as its neighbour.
                     sig, last = e.get("signature"), seen.get(step)
@@ -134,14 +149,17 @@ class Facts:
                 accepted_at = i
             elif kind == "amended" and e.get("needs_approval"):
                 amended_at = i
+                self.amend_reason = e.get("reason", "")
             elif kind == "shipped":
                 shipped_at = i
+        settle()
         self.consults = sum(1 for e in events if e.get("event") == "consulted")
         pack = os.path.join(project.root, ".rail", "packs", "consult", "bin", "consult")
         can_consult = os.path.exists(pack) and self.consults < 3
         self.attempts, self.same = attempts, same
         self.failing = failing if attempts.get(failing) else None  # the step the ticket is failing now, if any
-        # Why each step waits for a person: the cap, the attempt after consult, or the budget with no consult to ask.
+        # Why each step waits for a person: the cap, the attempt after consult, or the budget with
+        # no consult to ask.
         self.capped_why = {}
         for s, n in attempts.items():
             if n >= cap:
@@ -151,6 +169,7 @@ class Facts:
             elif s not in consulted and same[s] >= budget and not can_consult:
                 self.capped_why[s] = "same"
         self.capped = list(self.capped_why)
+        self.advised = [s for s, n in consulted.items() if n == 0]  # consult advised, and no attempt followed yet
         self.consult_due = next((s for s, n in same.items() if n >= budget and s not in consulted and can_consult
                                  and s not in self.capped_why), None)
         runs = [e for e in events[since:] if e.get("event") == "step" and e.get("step") in ("review", "security", "refuter")]
@@ -193,6 +212,15 @@ class Facts:
         times = [e.get("at", "") for e in list(self.t.events) + list(self.t.remote_events) if e.get("at") and not (
             e.get("event") == "continued" or (e.get("event") == "accepted" and e.get("by") == "person"))]
         return minutes_since(max(times)) if times else None
+
+    @property
+    def drafted_elsewhere(self):
+        """Another session is writing this ticket's contract: it noted so less than claim.stale_minutes ago."""
+        notes = sorted((e for e in list(self.t.events) + list(self.t.remote_events) if e.get("event") == "drafting"),
+                       key=lambda e: e.get("at", ""))  # the remote's too: this clone's branch may be behind
+        if self.state != "new" or not notes or notes[-1].get("session") == self.project.session:
+            return False
+        return minutes_since(notes[-1].get("at", "")) < self.project.config["claim"]["stale_minutes"]
 
     @property
     def taken_from_me(self):
@@ -283,15 +311,16 @@ class Facts:
                 return "implementing"  # a red required check or a conflict with base returns the ticket
         if self.needs_review and not self.ledger.complete(self.patch_id, self.tier):
             return "reviewing"
-        if project.remote and not (self.pr_open and self.pushed and self.ci == "green"):
-            return "in-ci"
+        if project.remote and (self.behind or not (self.pr_open and self.pushed and self.ci == "green")):
+            return "in-ci"  # also green and behind its base: GitHub refuses that merge, so it is rebased first
         return "merge-ready"
 
 
 def derive(project, tickets):
     """Facts for every ticket, with the cross-ticket facts: `after` and scope overlap."""
     facts = {nn: Facts(project, t) for nn, t in tickets.items()}
-    implementing = [f for f in facts.values() if f.state == "implementing"]
+    # In flight until it merges: a ticket in review or CI still conflicts with one that starts on the same paths.
+    implementing = [f for f in facts.values() if f.state in OPEN]
     for f in facts.values():
         if f.state != "accepted" or not f.ticket:
             continue

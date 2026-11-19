@@ -4,7 +4,8 @@ Rows whose code is in TRANSITIONS are moves `next` makes itself (accepting an AU
 consult); `next` makes the move, derives the facts again, and reads the table once more.
 """
 
-from .project import ticket_path
+from . import gitx
+from .project import advice_path, ticket_path
 from .util import MISSING_HELP
 
 TRANSITIONS = {"ACCEPT_AUTO", "CLAIM", "RESUME", "CONSULT", "GO", "REBASE_BEHIND", "CONTRACT_MERGED"}
@@ -119,7 +120,10 @@ def _assumptions(f):
     rows = "\n".join(f"- {r}" for r in f.open_assumptions)
     return (f"Ticket {f.id} has open ASSUMED rows. Verify each one in the code or the docs before you implement,"
             f" then change \"ASSUMED:\" to \"VERIFIED:\" in {ticket_path(f.id)} and say how you checked."
-            f" If you can't verify one, ask the person and stop.\n{rows}\nWork in {f.cwd}.")
+            f" A row you can't verify is a choice, not a fact, and nobody is here to ask. Decide it: keep the reading"
+            f" the ticket's `## Why` supports, change the row to `VERIFIED:` and start it with `decided, not checked:`,"
+            f" then your reason and what it costs if you are wrong. On a PERSON ticket the person approved the contract"
+            f" with these rows in it.\n{rows}\nWork in {f.cwd}.")
 
 
 def _step_failed(f):
@@ -128,7 +132,19 @@ def _step_failed(f):
         return (f"The last ship of ticket {f.id} could not run '{e.get('step')}': {e.get('detail', '')}. {MISSING_HELP}"
                 f" Then run: rail advance {f.id}") + _findings(f, "Open review findings:") + _note(f)
     return (f"The last ship of ticket {f.id} failed at '{e.get('step')}': {e.get('detail', '')}. Nothing has changed"
-            f" since. Fix the cause in {f.cwd}, then run: rail advance {f.id}") + _findings(f, "Open review findings:") + _note(f)
+            f" since. Fix the cause in {f.cwd}, then run: rail advance {f.id}") + _advice(f, e.get("step")) \
+        + _findings(f, "Open review findings:") + _note(f)
+
+
+def _advice(f, step):
+    """Consult's latest advice, while the attempt it was given for is still to come. `rail advance` shows it once;
+    a fresh worker gets its brief from `rail next` and would otherwise never see it."""
+    if step not in f.advised:
+        return ""
+    ref = f"{f.t.ref}:{advice_path(f.id)}"
+    text = gitx.read_blobs([ref], f.project.root).get(ref) or ""
+    last = text.strip().rsplit("\n## ", 1)[-1].strip()
+    return f"\n\nConsult advised on this failure:\n## {last.removeprefix('## ')}" if last else ""
 
 
 def _could_not_run(f, steps):
@@ -236,6 +252,10 @@ ROWS = [
      lambda f: f"A rebase is under way in {f.cwd} (ticket {f.id}, branch {f.t.branch}). Finish it there: resolve each"
                f" conflicted file, git add it, then git rebase --continue. To give the rebase up: git rebase --abort."
                f" Then run: rail advance {f.id}\nRail writes nothing to the ticket until the rebase has ended."),
+    # One session writes a contract: four that start at once would each send a worker to write the same one.
+    ("CONTRACT_ELSEWHERE", "none",  "rest",        lambda f: f.state == "new" and f.lint_errors and f.drafted_elsewhere
+                                                   and not f.explicit,
+     lambda f: f"Another session is writing the contract of ticket {f.id}. rail next --ticket {f.id} takes it over."),
     ("TICKET_LINT",        "agent", "agent_task",  lambda f: f.state == "new" and f.lint_errors,
      lambda f: f"Ticket {f.id} isn't complete: {'; '.join(f.lint_errors)}. Read it ({ticket_path(f.id)} on branch"
                f" {f.t.name}), write the whole ticket to a file with its Done Contract, tier and scope_paths, and run:"
@@ -262,7 +282,8 @@ ROWS = [
     ("CLAIM",              "agent", "script",      lambda f: f.state == "accepted",
      lambda f: f"rail next --ticket {f.id}"),
     ("APPROVE_AMEND",      "human", "human_wait",  lambda f: f.amend_pending,
-     lambda f: f"The Done Contract of ticket {f.id} changed (rail amend). Read {ticket_path(f.id)} on branch {f.t.name},"
+     lambda f: f"The Done Contract of ticket {f.id} changed (rail amend)."
+               + (f" The agent's reason: {f.amend_reason}" if f.amend_reason else "") + f" Read {ticket_path(f.id)} on branch {f.t.name},"
                f" then approve it: rail accept {f.id}." + _go(f)),
     ("RETRY_CAP",          "human", "human_wait",  lambda f: f.state in OPEN and f.capped,
      _capped),
@@ -273,6 +294,10 @@ ROWS = [
      lambda f: f"The refuter upheld {_join(f.ledger.disputed_again())} on ticket {f.id}, and the agent still disputes it."
                f" A person decides: rail answer {f.id} F1 declined \"why\" --owner, rail answer {f.id} F1 parked"
                f" \"why\" --owner when this change didn't cause it, or rail accept {f.id} \"how to fix it\"."),
+    # Before HOLD: the engine labels every wait rail:needs-you, and this one would then read as a person's hold.
+    ("MERGE_FAILED",       "human", "human_wait",  lambda f: f.state == "merge-ready" and _merge_stale(f),
+     lambda f: f"The merge of {_pr(f)} was requested and hasn't landed. A person looks at the pull request, then"
+               f" continues: rail accept {f.id}." + _go(f)),
     ("HOLD",               "human", "human_wait",  lambda f: "rail:needs-you" in f.labels
                                                    and not (f.state == "merge-ready" and not f.auto),
      lambda f: f"A person holds ticket {f.id} with the label rail:needs-you on {_pr(f)}. They continue it with the"
@@ -294,7 +319,9 @@ ROWS = [
     ("SWEEP_TICKETS",      "agent", "agent_task",  lambda f: f.state == "implementing" and f.sweep and not f.dirty
                                                    and not f.last_fail,
      lambda f: f"The sweep ran: read .rail/journal/{f.id}-summary.md in {f.cwd}. Open a ticket with rail add for each"
-               f" finding worth one (set caused_by when a ticket caused it), and one ticket \"make it a check: ...\" for"
+               f" finding that names something wrong: an input or a sequence that fails, or a doc that no longer"
+               f" matches the code (set caused_by when a ticket caused it); a finding about style, naming or where a"
+               f" test lives gets no ticket. Open one ticket \"make it a check: ...\" for"
                f" each kind of proposed check. Drop duplicates. Change no code here. Then run: rail advance {f.id}"),
     ("SETUP_FAILED",       "agent", "agent_task",  lambda f: f.state == "implementing" and f.setup_failed,
      _setup_failed),
@@ -326,9 +353,6 @@ ROWS = [
     ("CI_WAIT",            "none",  "rest",        lambda f: f.state == "in-ci",
      lambda f: f"Ticket {f.id} shipped; CI runs on {_pr(f)}." if f.pushed else
                f"Ticket {f.id} shipped; its branch isn't pushed to {_pr(f)} yet: run rail advance {f.id}."),
-    ("MERGE_FAILED",       "human", "human_wait",  lambda f: f.state == "merge-ready" and _merge_stale(f),
-     lambda f: f"The merge of {_pr(f)} was requested and hasn't landed. A person looks at the pull request, then"
-               f" continues: rail accept {f.id}." + _go(f)),
     ("MERGE_REQUESTED",    "none",  "rest",        lambda f: f.state == "merge-ready" and _merge_requested(f),
      lambda f: f"The merge of {_pr(f)} is requested; rail next sees it on the base branch once GitHub lands it."),
     ("MERGE",              "agent", "script",      lambda f: f.state == "merge-ready" and (f.auto or f.merge_approved)

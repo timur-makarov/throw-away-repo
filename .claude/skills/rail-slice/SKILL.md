@@ -10,7 +10,7 @@ description: Split work that is too large for one Rail ticket into tickets that 
 - **Produces:** a set of ticket drafts, each with its own Done Contract and `scope_paths`, and `after`
   lines that give the order.
 - **Done means:** each draft passes the three tests below. With a person present, they have seen the whole
-  set and confirmed it before anything is filed.
+  set and confirmed it before anything is filed. With nobody to ask, the set is filed.
 
 ## 1. Cut by behaviour
 
@@ -48,7 +48,8 @@ drafts overlap something open, and leave those out or point at the open one.
 ## 5. Show, then file
 
 Show the whole set: the titles, the order, and each Done Contract. With a person present, file only what
-they confirm. Each draft is filed like any ticket: `rail add FILE`, from a file outside the repository.
+they confirm. When the request came in writing and nobody can answer, file the set without waiting. Each
+draft is filed like any ticket: `rail add FILE`, from a file outside the repository.
 
 ## When the engine offered the split
 

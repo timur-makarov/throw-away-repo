@@ -29,8 +29,9 @@ next sweep starts. The first sweep starts where Rail was set up.
   journal gets a `harvest` step instead.
 - **Output:** tickets, never edits, and a one-page summary in `.rail/journal/NN-summary.md`: the free part,
   the review's findings, the parked findings and the proposed checks by kind. The agent opens a ticket for
-  each finding worth one, and one ticket "make it a check: ..." for each kind of proposed check, so a mistake
-  that could happen again ends as a test, a rule or a lint.
+  each finding that names something wrong (a finding about style gets none), and one ticket
+  "make it a check: ..." for each kind of proposed check, so a mistake that could happen again ends as a
+  test, a rule or a lint.
 
 When the sweep finds nothing (no unreviewed change, no parked finding, no proposed check, and doc-lint is
 clean), the agent gets no task: `rail next` answers `SWEEP_EMPTY` with `rail advance NN`, and the sweep's

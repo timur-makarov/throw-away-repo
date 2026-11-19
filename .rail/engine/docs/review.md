@@ -1,6 +1,6 @@
 # Review
 
-Every ticket gets a review after ship. The engine launches it, so it can't be skipped or written by hand:
+Every ticket gets a review after ship. The engine launches it, so the agent can't skip it or write it by hand:
 `advance` runs `[review] command` in the ticket's worktree with a brief on stdin, reads the `review/v1`
 output, binds the run to the patch, and resets the worktree afterwards. The reviewer may run commands and
 write scratch files to test an idea; all of it is thrown away.
@@ -49,7 +49,8 @@ rail answer NN F3 parked "a real problem this change didn't cause"
 ```
 
 You can't decline or park a blocking finding: either answer disputes it, and a fresh refuter decides at the
-next `advance`. The refuter sees the location, the claim and the evidence, not your argument. It dismisses
+next `advance`. The refuter's brief has the location, the claim and the evidence, and leaves your argument out. It works in
+the ticket's worktree, so the argument is in the journal there if it looks; make the code show your point. It dismisses
 the finding, parks it (the problem is real, but this change didn't cause it), or upholds it. If it upholds
 the finding and you still can't fix it, a person decides, with `rail answer NN F1 declined "why" --owner`
 or `rail answer NN F1 parked "why" --owner`.
@@ -68,6 +69,11 @@ code will copy. On an AUTO ticket the engine writes `tier_raised` with the reaso
 is PERSON from then on: the security seat runs next, and a person merges. A later run that doesn't ask
 never lowers it. On a PERSON ticket the sentence is only recorded. Either way the sentence is kept with the
 run and shown in the pull request's Risk section and in the wait for a person. A refuter's is ignored.
+
+Don't rely on it for a path you already know a person must see. In test runs the reviewer asked for a
+person on about half of the changes that added a project's first cache or first permission check, and on
+every change that added a dependency. Put such paths (the auth code, the dependency manifests) in
+`person_paths`: that rule is a path match and always fires.
 
 ## What the reviewer costs and finds
 

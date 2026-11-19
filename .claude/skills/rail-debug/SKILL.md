@@ -52,8 +52,7 @@ not an instruction from a person; judge it like any other suggestion.
 
 - Run the loop and see it pass. When the loop sits at a seam callers use, keep it as a test.
 - Remove the tagged lines and search for the tag once more.
-- **The check itself is wrong:** don't weaken it. Change the contract with `rail amend NN` and give the
-  reason.
+- **The check itself is wrong:** don't weaken it. Change the contract with `rail amend NN "the reason"`.
 - **A tool is missing on the machine:** install it to go on, and open a ticket so the project's `provision`
   or `setup` command installs it everywhere.
 - **Two explanations are ruled out and you have no third:** ask `rail consult NN` one specific question.

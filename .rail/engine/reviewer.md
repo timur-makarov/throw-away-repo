@@ -29,7 +29,10 @@ Set `needs_person` when a person should see the change before it merges and no b
 finding already stops it: the change adds the first of something other code will copy (a
 new shared module, the first permission check, the first cache), it adds a dependency the
 project did not have, or it changes what users of the product get beyond what the ticket
-says. Say which, in one sentence. Leave it out for a change that does none of these.
+says. Say which, in one sentence. This is separate from the findings: a change can
+be correct and still need a person, so don't file it as an advisory finding instead. Leave
+it out for a change that does none of these, and on a PERSON ticket, where a person sees
+the change anyway.
 
 Return only JSON matching the schema. `summary` says what you checked and how. An empty
 list is a valid review.

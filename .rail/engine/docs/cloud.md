@@ -71,22 +71,48 @@ ticket, `rail next --ticket NN`, `rail adopt`.
 
 Make one scheduled task for the repository, on the environment from step 4, with this prompt:
 
-    Run `rail next --json`. When `action.kind` is `agent_task` and the answer names `action.model`, start
-    one subagent on that model and effort. Give it `action.brief` word for word, tell it to work in `cwd`,
-    and tell it to stop when the brief is done without running `rail advance`. When it returns, run
-    `rail advance --json` yourself. For any other `action.kind`, do what the answer says yourself. Repeat
-    until `rail next` answers that only a person can act or that there is no work. Then say which tickets
-    wait for a person, and stop.
+    You are the Rail runner for this repository. Nobody is here to answer questions.
 
-Each ticket gets a fresh context and the model its tier and its failed attempts call for. The runner decides
-nothing and keeps a small context, so one run can move many tickets. A failed attempt goes to a new worker
-one rung up, with the failure in its brief. A guide line (`rail docs guides`) is part of the brief, so the worker gets it.
+    Repeat these steps:
+    1. Run `rail next --json`.
+    2. If `action.kind` is `agent_task`: give the brief to a subagent. Use the subagent already working this
+       ticket if there is one and `action.model` has not changed; otherwise start one on `action.model` and
+       effort. Give it `action.brief` word for word. Tell it to work in `cwd`, not to run `rail advance`, and
+       to reply in one line: done, or what stopped it. When it replies, run `rail advance --json` for that
+       ticket. If that answer is another `agent_task` for the same ticket, do this step again with it.
+    3. If `action.kind` is `script`: run `action.command`.
+    4. After any other answer from `rail advance`, go back to step 1.
+    5. Stop only when `rail next` itself answers that only a person can act or that there is no work.
 
-Give it these triggers:
+    Don't check or change a member's work yourself: `rail advance` does that. End with one message that
+    says which tickets wait for a person and what each one needs.
 
-- **GitHub events:** an issue labelled, a pull request labelled, and a pull request closed. They cover new
-  work, your `rail:go`, and a merge that unblocks the next ticket.
+One worker carries a ticket from its assumptions to its last fix, so the repository is read once for each
+ticket and not once for each step. A failed attempt that calls for a stronger model goes to a new worker
+on that model, with the failure in its brief. The runner decides nothing and keeps a small context, so one
+run can move many tickets. A guide line (`rail docs guides`) is part of the brief, so the worker gets it.
+Only `rail next` ends the loop: one ticket that waits for a person does not stop the others.
+
+Give it these triggers. Where a task takes only one GitHub event, make one task for each event, all with
+the same prompt:
+
+- **An issue labelled.** New work: the label `rail` starts it. "Issue opened" misses an issue that gets the
+  label later.
+- **A pull request labelled,** with the filter "Labels contains `rail:go`". Your approval. Without the
+  filter the engine's own `rail:needs-you` starts a run too.
+- **A pull request closed,** with the filter "Is merged". A merge unblocks the next ticket, and it is what
+  puts another open pull request behind its base.
 - **A schedule,** hourly or nightly, as a net for anything an event missed.
+
+Don't use "edited" or "synchronized": the engine writes each pull request's title, body and branch, so its
+own work would start run after run.
+
+**One runner for a repository.** A scheduled task belongs to one person's Claude account: its runs are that
+person's usage, and its commits and pull requests carry that person's GitHub login. When two people each
+make these tasks for the same repository, every event starts a run for each of them. Claims keep the two
+off the same ticket, but each event costs twice, and nothing decides whose name a ticket's work carries.
+Until Rail has a way to share the work out (`proposals/team.md`), one person owns the runner, and the
+others hand work over and answer waits on GitHub.
 
 Each run is a fresh session, and the section above is why that is enough. For more work at once, start
 more sessions: claims are taken on the remote, so two never take the same ticket. `rail status --json`

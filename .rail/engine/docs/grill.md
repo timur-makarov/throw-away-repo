@@ -1,8 +1,9 @@
 # Grilling a request into a ticket
 
 For an agent that turns a person's request into a Rail ticket, in whatever chat the person uses: a Claude Code
-session, Slack, Telegram, Dots, the Claude app. The person is there and can answer. The goal is a ticket whose
-Done Contract says what the person means, so the agent that works it later never has to guess.
+session, Slack, Telegram, Dots, the Claude app. The person is there and can answer, or the request came in
+writing and nobody can. The goal is a ticket whose Done Contract says what the person means, so the agent
+that works it later never has to guess.
 
 You only ask. You don't change code, and you don't start the work.
 
@@ -31,7 +32,7 @@ write the check for that problem; if the mechanism does not fit it, say so in yo
 ## 3. Ask only what changes the contract
 
 A question is worth asking when its answer changes a `Check:` line, `scope_paths`, the tier, or what is out
-of scope. Anything else you can't settle becomes an `ASSUMED:` row, which the working agent verifies.
+of scope. Anything else you can't settle becomes an `ASSUMED:` row, which the working agent verifies, or decides when nobody can check it.
 
 - At most five questions in all, one to three at a time.
 - Each question carries your recommendation and one line of why, so the person can answer "yes".
@@ -58,6 +59,9 @@ person changed it makes the numbers lie. A question the person didn't answer is 
 
 Show the whole ticket, take changes, and show it again. Count the drafts you showed. File it only when the
 person says it is right.
+
+When the request came in writing and nobody can answer, don't wait for a confirmation: write each question
+you would have asked as an `ASSUMED:` row, leave the table and `Confirmed:` empty, and file the draft.
 
 - **In a Claude Code session in the repository:** write the ticket to a file outside the repository and run
   `rail add FILE`.
@@ -92,6 +96,7 @@ person has confirmed the draft.
 - `Agent` is the model that grilled. `Person` is the GitHub login of the person who answered, only when
   they gave it; never a messenger handle, which would stay in git for good.
 - `Started` is when the request came, `Confirmed` when the person confirmed the draft, both in UTC.
+  With nobody to confirm, `Confirmed:` stays empty.
 - `Topic` is one of `scope`, `done`, `behaviour`, `tier`, `out-of-scope`, `other`. Write a `|` inside a
   cell as `\|`.
 - A ticket with no questions keeps the lines and an empty table: you read the code and asked nothing.
