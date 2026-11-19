@@ -1,0 +1,2 @@
+{"v":1,"at":"2026-11-19T06:09:56Z","ticket":"8","event":"requested","via":"add","channel":"session","grilled":false,"assumed":0}
+{"v":1,"at":"2026-11-19T06:09:56Z","ticket":"8","event":"accepted","by":"engine","via":"lint","tier":"AUTO","contract":"01086497a147","done":"31b813e07a8e","scope_paths":["docs/api.md"]}
