@@ -1,1 +1,2 @@
 {"v":1,"at":"2026-11-19T03:21:25Z","ticket":"4","event":"requested","via":"intake","channel":"github","grilled":false,"assumed":0,"external_id":"github#18","filed_by":"timur-makarov"}
+{"v":1,"at":"2026-11-19T06:09:54Z","ticket":"4","event":"accepted","by":"person","via":"label","tier":"PERSON","contract":"afcae370e391","done":"0d0bd4d4d288","scope_paths":["migrations/0002_quantity_numeric.sql","shop/orders.py","tests/test_orders.py"]}
