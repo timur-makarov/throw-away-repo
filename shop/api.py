@@ -91,3 +91,15 @@ def update_customer(request):
     customer = {"id": found["id"], "name": name, "email": email}
     store.save_customer(customer)
     return {"status": 200, "customer": customer}
+
+
+def delete_customer(request):
+    if not auth.allowed(request, "delete"):
+        return {"status": 403, "error": "not allowed"}
+    customer_id = request.get("id")
+    if type(customer_id) is not int or _find_customer(customer_id) is None:
+        return {"status": 404, "error": "no such customer"}
+    if any(order.get("customer_id") == customer_id for order in store.list_orders()):
+        return {"status": 409, "error": "customer has orders"}
+    store.delete_customer(customer_id)
+    return {"status": 200}
