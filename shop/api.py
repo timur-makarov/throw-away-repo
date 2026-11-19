@@ -33,6 +33,18 @@ def delete_product(request):
     return {"status": 200}
 
 
+def rename_product(request):
+    if not auth.allowed(request, "rename"):
+        return {"status": 403, "error": "not allowed"}
+    product_id, name = request.get("id"), request.get("name")
+    if type(product_id) is not int or not any(p["id"] == product_id for p in store.list_products()):
+        return {"status": 404, "error": "no such product"}
+    if not isinstance(name, str) or not name.strip():
+        return {"status": 400, "error": "name must not be empty"}
+    store.rename_product(product_id, name.strip())
+    return {"status": 200}
+
+
 def _customer_fields(request):
     """Return (name, email, None) for valid input, or (None, None, error)."""
     name, email = request.get("name"), request.get("email")

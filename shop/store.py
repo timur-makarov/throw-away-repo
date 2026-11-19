@@ -36,6 +36,15 @@ def list_products():
     return [dict(p) for _, p in sorted(_PRODUCTS.items())]
 
 
+def rename_product(product_id, name):
+    """Set a stored product's name. Return False when there is no such product."""
+    found = _PRODUCTS.get(product_id)
+    if found is None:
+        return False
+    found["name"] = name
+    return True
+
+
 def delete_product(product_id):
     return _PRODUCTS.pop(product_id, None) is not None
 
