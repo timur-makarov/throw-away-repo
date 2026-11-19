@@ -1,0 +1,18 @@
+{
+  "schema": "review/v1",
+  "ticket": "9",
+  "runs": [
+    {
+      "run": 1,
+      "role": "review",
+      "patch_id": "a882660ca3c17dbd8edef5616bd09f7647a07e56",
+      "head": "a02a59e9b92f",
+      "tier": "PERSON",
+      "at": "2026-11-19T08:08:43Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.0288679,
+      "summary": "I ran the full test suite (38 passed) and `ruff check .` (clean). I read the diff against the Done Contract and the Look-at list. The \"rename\" action is granted to admin only. 403 is checked before 404. Bad ids give 404 and bad names give 400, and the tests cover each of these. The store write goes through `shop/store.py`. I found no problems.",
+      "findings": []
+    }
+  ]
+}
