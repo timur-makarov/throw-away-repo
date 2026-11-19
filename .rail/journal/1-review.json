@@ -23,6 +23,18 @@
         }
       ],
       "needs_person": "The CSV column layout changes: `total` moves from column 2 to column 4. The ticket says this was confirmed, but it changes what finance receives."
+    },
+    {
+      "run": 2,
+      "role": "security",
+      "patch_id": "80bde2593cd4a360a1d85b2e2dfdc6d22ec49219",
+      "head": "a0b6a1c42317",
+      "tier": "PERSON",
+      "at": "2026-11-19T06:10:33Z",
+      "model": "claude-sonnet-5-5",
+      "cost_usd": 0.0300261,
+      "summary": "I read shop/export.py and grepped shop/ for where `orders_csv` and `customer_id` are used. The diff adds only an order-level `customer_id` (an id) and a line count to an export that already covers every order. `orders_csv` has no handler or caller in shop/api.py, so the diff adds no new route or permission path. `customer_id` is not free text, so I found no way to put a formula into the CSV. The change adds no injection, authorization or personal-data problem. There is no THREAT_MODEL.md.",
+      "findings": []
     }
   ]
 }
