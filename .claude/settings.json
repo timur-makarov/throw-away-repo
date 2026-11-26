@@ -18,7 +18,8 @@
       "Bash(rail consult *)",
       "Bash(rail save *)",
       "Bash(rail provision *)",
-      "Bash(gh run watch *)"
+      "Bash(gh run watch *)",
+      "Bash(rail work *)"
     ],
     "deny": [
       "Read(./**/.env)",
@@ -110,6 +111,18 @@
     ]
   },
   "sandbox": {
-    "enabled": true
+    "enabled": true,
+    "excludedCommands": [
+      "rail advance *",
+      "rail next *",
+      "rail work *"
+    ],
+    "network": {
+      "allowedDomains": [
+        "api.anthropic.com",
+        "pypi.org",
+        "files.pythonhosted.org"
+      ]
+    }
   }
 }

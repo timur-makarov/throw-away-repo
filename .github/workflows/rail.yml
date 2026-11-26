@@ -1,5 +1,5 @@
 # Rail's check: repeats the ship checks on every pull request (rail docs github).
-# Make `rail` a required check on the base branch. CI runs no model, so it needs no secrets.
+# Make `rail` a required check on the base branch. CI runs no model, so it needs no key of its own.
 name: rail
 on:
   pull_request:
@@ -17,3 +17,7 @@ jobs:
         run: .rail/bin/rail ci
         env:
           RAIL_BRANCH: ${{ github.head_ref }}
+          # A check that needs a key: one line for each name of a tool declared `ci = true` in .rail/config.toml, as
+          #   PAY_TEST_KEY: ${{ secrets.PAY_TEST_KEY }}
+          # A ticket branch runs its own copy of this file, so pass test and dev keys only and never every secret at
+          # once (rail docs tools). rail doctor checks these lines.

@@ -9,7 +9,7 @@ import json
 import re
 from collections import defaultdict
 
-from . import doclint, gitx
+from . import doclint, flakes, gitx
 from .project import events_path, parse_events
 from .util import globmatch, match_any
 
@@ -24,6 +24,12 @@ reviewers proposed are below: report a parked one again when it is real, and gro
 
 
 NOTHING = "nothing to file"  # the detail of a harvest step that found nothing: the ticket merges with no task
+PATTERN_TICKETS = 3  # the same dead end in the worker runs of this many merged tickets is a pattern
+FLAKE_TICKETS = 2    # the same command flaky in this many merged tickets gets a ticket
+FLAKE_RUNS = 20      # how often in a row that ticket's check runs the command
+# What a worker run counts (rail docs journal, the `worked` event), as the summary says it.
+DEAD_ENDS = {"failed": "`{key}` failed before it first passed", "not_found": "`{key}` wasn't on the machine",
+             "denied": "a call was denied (`{key}`)", "reread": "`{key}` was read more than twice in a run"}
 
 
 def since_last(project):
@@ -76,10 +82,15 @@ def ticket_text(start, unreviewed, merged):
 
 
 def free_part(project):
-    """What needs no model: doc-lint on base, and each structure rule counted over the whole tree."""
+    """What needs no model: doc-lint on base, each structure rule counted over the whole tree, and the manifests on
+    base that no [[profiles]] entry covers (rail docs languages), as one sentence in a list."""
+    from . import init
+
     problems = doclint.lint(project, project.base_ref)
     files = [f for f in gitx.git(["ls-tree", "-r", "-z", "--name-only", project.base_ref], project.root)
              .stdout.split("\0") if f]
+    bare = init.unprofiled(files, project.config)
+    languages = [init.uncovered(bare)] if bare else []
     counts = {}
     for rule in project.config["rules"]:
         hits = 0
@@ -90,12 +101,13 @@ def free_part(project):
                 if any(word in line for word in rule.get("forbid", [])):
                     hits += 1
         counts[rule["id"]] = hits
-    return problems, counts
+    return problems, counts, languages
 
 
 def history(project, merged):
-    """The parked findings and the proposed checks of fixed findings, from the journals of every ticket merged since
-    the last sweep, reviewed or not: a reviewed ticket is where a reviewer parks a finding."""
+    """The parked findings, the advisory findings left open, and the proposed checks of fixed findings, from the
+    journals of every ticket merged since the last sweep, reviewed or not: a reviewed ticket is where a reviewer parks
+    a finding."""
     ids = sorted(set(merged), key=int)
     blobs = gitx.read_blobs([f"{project.base_ref}:{events_path(nn)}" for nn in ids], project.root)
     parked, checks = [], defaultdict(list)
@@ -110,6 +122,8 @@ def history(project, merged):
             claim = first.get(fid, {}).get("claim", "")
             if e.get("outcome") == "parked":
                 parked.append((nn, fid, claim))
+            elif e.get("outcome") == "open" and first.get(fid, {}).get("severity") == "advisory":
+                parked.append((nn, f"{fid} (advisory, left open)", claim))
             elif e.get("outcome") == "fixed" and first.get(fid, {}).get("check"):
                 checks[" ".join(first[fid]["check"].lower().split())].append(f"{nn}/{fid}")
     seen, unique = set(), []
@@ -119,6 +133,44 @@ def history(project, merged):
             seen.add(key)
             unique.append((nn, fid, claim))
     return unique, dict(checks)
+
+
+def patterns(project, merged):
+    """The dead ends that recur in the worker runs of the tickets merged since the last sweep: a command that failed
+    before it first passed, one the machine doesn't have, a denied call or a file read again and again, in
+    PATTERN_TICKETS tickets or more. Each is something the project could have told the worker. Returns
+    [(kind, key, ticket ids)], the most tickets first. Read from the `worked` events, which keep a short key per
+    item, so the run logs (never committed) aren't needed."""
+    ids = sorted(set(merged), key=int)
+    blobs = gitx.read_blobs([f"{project.base_ref}:{events_path(nn)}" for nn in ids], project.root)
+    seen = defaultdict(list)
+    for nn in ids:
+        keys = set()
+        for e in parse_events(blobs.get(f"{project.base_ref}:{events_path(nn)}")):
+            if e.get("event") == "worked" and isinstance(e.get("keys"), dict):
+                keys.update((kind, key) for kind, found in e["keys"].items() if kind in DEAD_ENDS for key in found)
+        for item in keys:
+            seen[item].append(nn)
+    found = [(kind, key, where) for (kind, key), where in seen.items() if len(where) >= PATTERN_TICKETS]
+    return sorted(found, key=lambda x: (-len(x[2]), x[0], x[1]))
+
+
+def flaky(project, merged):
+    """The commands that were flaky (rail docs retries) in FLAKE_TICKETS or more of the tickets merged since the last
+    sweep, as [(command, ticket ids)]. The command is matched as the failure signatures are: lower-cased, with
+    numbers, hashes and paths left out, so a temp path in it doesn't make it two commands."""
+    from .steps import normalise
+
+    ids = sorted(set(merged), key=int)
+    blobs = gitx.read_blobs([f"{project.base_ref}:{events_path(nn)}" for nn in ids], project.root)
+    seen, shown = defaultdict(list), {}
+    for nn in ids:
+        for key in dict.fromkeys(flakes.name(x) for x in flakes.of(parse_events(blobs.get(f"{project.base_ref}:{events_path(nn)}")))):
+            seen[normalise(key)].append(nn)
+            shown.setdefault(normalise(key), key)
+    verify = project.config["commands"]["verify"]
+    return [(verify if shown[key] == "verify" and verify else shown[key], where)
+            for key, where in sorted(seen.items(), key=lambda x: (-len(x[1]), x[0])) if len(where) >= FLAKE_TICKETS]
 
 
 def brief(project, commits, parked, checks):
@@ -133,7 +185,7 @@ def brief(project, commits, parked, checks):
         "## The changes", "```diff", "\n\n".join(diffs), "```", "",
         "## The project's conventions (from AGENTS.md)", project_conventions(project, project.base_ref) or "(none)", "",
         "## What to look for", SWEEP_LOOK_FOR, "", SECURITY, "", DO_NOT_REPORT, "",
-        "## Parked findings from the tickets merged since the last sweep",
+        "## Parked and open advisory findings from the tickets merged since the last sweep",
         *([f"- ticket {nn} {fid}: {claim}" for nn, fid, claim in parked] or ["(none)"]), "",
         "## Checks reviewers proposed for findings that were fixed",
         *([f"- {check} ({', '.join(where)})" for check, where in checks.items()] or ["(none)"]),
@@ -141,37 +193,48 @@ def brief(project, commits, parked, checks):
     return "\n".join(parts) + "\n"
 
 
-def summary(nn, start, commits, merged, problems, counts, entry, parked, checks):
+def summary(nn, start, commits, merged, problems, counts, entry, parked, checks, recurring=(), flaked=(), languages=()):
     review = (entry["summary"] if entry else "(the review run failed)") if commits else \
         "(no review run: nothing merged without a review)"
     lines = [f"# Sweep {nn}", "", f"Since {start[:12]}: {len(merged)} tickets merged; {len(commits)} commits merged"
                                   " without a review.", "",
              "## Free part", *([f"- doc-lint: {p}" for p in problems] or ["- doc-lint: clean"]),
-             *[f"- rule {rid}: {n} lines in the tree" for rid, n in counts.items()], "",
+             *[f"- rule {rid}: {n} lines in the tree" for rid, n in counts.items()],
+             *[f"- languages: {line}" for line in languages], "",
              "## Review", review, ""]
     for f in (entry or {}).get("findings", []):
         where = f"{f['file']}:{f['line']}" if f.get("line") else f["file"]
         lines.append(f"- {f['id']} ({f['severity']}) {where}: {f['claim']}" + (f" Check: {f['check']}" if f.get("check") else ""))
-    lines += ["", "## Parked findings", *([f"- ticket {n} {fid}: {c}" for n, fid, c in parked] or ["(none)"]),
-              "", "## Proposed checks, by kind", *([f"- {c} ({', '.join(w)})" for c, w in checks.items()] or ["(none)"])]
+    lines += ["", "## Parked and open advisory findings", *([f"- ticket {n} {fid}: {c}" for n, fid, c in parked] or ["(none)"]),
+              "", "## Proposed checks, by kind", *([f"- {c} ({', '.join(w)})" for c, w in checks.items()] or ["(none)"]),
+              "", "## Patterns in the worker runs",
+              *([f"- {DEAD_ENDS[kind].format(key=key)}, in {len(where)} tickets ({', '.join(where)})"
+                 for kind, key, where in recurring] or ["(none)"]),
+              "", "## Flaky checks",
+              *([f"- `{command}` both failed and passed on the same code, in {len(where)} tickets"
+                 f" ({', '.join(where)}). Check: `for i in $(seq {FLAKE_RUNS}); do {command} || exit 1; done`"
+                 for command, where in flaked] or ["(none)"])]
     return "\n".join(lines) + "\n"
 
 
 def run(project, f, receipt):
-    """The free part, the parked findings and proposed checks, and one review pass with the sweep brief when
-    something merged without a review. With nothing unreviewed there is no model run: a passed `harvest` step says
+    """The free part, the parked findings and proposed checks, the patterns in the worker runs, and one review pass
+    with the sweep brief when something merged without a review. With nothing unreviewed there is no model run: a passed `harvest` step says
     so, and its detail says when nothing at all was found. Writes NN-summary.md into `receipt`."""
     from . import review
 
     start, commits, merged = since_last(project)
-    problems, counts = free_part(project)
+    problems, counts, languages = free_part(project)
     parked, checks = history(project, merged)
+    recurring, flaked = patterns(project, merged), flaky(project, merged)
     entry = None
     if commits:
         entry = review.run(project, f, "sweep", receipt, prompt=brief(project, commits, parked, checks))
     else:
-        receipt.record("harvest", True, f.patch_id, NOTHING if not (problems or parked or checks) else
-                       f"no review run: {len(parked)} parked findings, {len(checks)} proposed checks")
+        receipt.record("harvest", True, f.patch_id, NOTHING if not (problems or languages or parked or checks or recurring or flaked)
+                       else f"no review run: {len(parked)} parked findings, {len(checks)} proposed checks,"
+                            f" {len(recurring)} patterns in the worker runs, {len(flaked)} flaky checks"
+                            + (", a language with no profile" if languages else ""))
     receipt.files[f".rail/journal/{f.id}-summary.md"] = summary(f.id, start, commits, merged, problems, counts, entry,
-                                                               parked, checks)
+                                                               parked, checks, recurring, flaked, languages)
     return entry

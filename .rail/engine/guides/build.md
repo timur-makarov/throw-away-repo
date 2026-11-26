@@ -1,8 +1,3 @@
----
-name: rail-build
-description: Work a claimed Rail ticket from its contract to a change that is ready for rail advance. Use at the start of work on a ticket, when rail next returns an agent_task for a ticket in implementing.
----
-
 # Build a ticket
 
 - **Assumes:** you hold a claimed ticket and work in its worktree (`cwd` in the answer of `rail next`). The
@@ -17,7 +12,7 @@ description: Work a claimed Rail ticket from its contract to a change that is re
 Say in one sentence what a user or caller will observe after this ticket that they can't observe now. If you
 can't, the contract is unclear. Nobody is there to ask, so pick the reading the `## Why` supports, write it
 as an `ASSUMED:` row, and go on. If two readings need different checks, change the contract with
-`rail amend NN` instead; an amend is recorded.
+`rail amend NN "why"` instead; an amend is recorded with its reason.
 
 ## 2. Run every check now
 
@@ -26,7 +21,7 @@ Run each `Check:` line before you change anything, and read the output.
 - **It fails for the reason the ticket gives:** good. That check will show your work.
 - **It fails because a file or test does not exist yet:** you write that test first (step 4).
 - **It already passes:** it can't show that your work was done. Add a check that fails today, with
-  `rail amend NN`. This does not apply when the ticket keeps behaviour the same on purpose (a refactor, a
+  `rail amend NN "why"`. This does not apply when the ticket keeps behaviour the same on purpose (a refactor, a
   dependency update): there, "the existing tests still pass" is the right contract.
 
 ## 3. Orient cheaply
@@ -65,7 +60,7 @@ Only then write it, and only as much as the contract needs. A new dependency com
   number, the known limit, and what to do when the limit is reached. A structure rule refuses the marker
   without a number.
 
-- **You need a path outside `scope_paths`:** widen the scope with `rail amend NN`. Don't work around it.
+- **You need a path outside `scope_paths`:** widen the scope with `rail amend NN "why"`. Don't work around it.
 - **You notice a problem the ticket didn't ask about:** leave it. Name it in `## Look at`, or open a ticket
   with `rail add`.
 - **The same edit repeats in many places:** write the script. Do one place by hand, check the script gives

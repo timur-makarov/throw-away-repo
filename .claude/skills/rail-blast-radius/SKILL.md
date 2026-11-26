@@ -33,12 +33,12 @@ From each place, follow what depends on it. Stop where the change can't reach, a
 
 ## 3. Turn it into the contract
 
-Read `.rail/config.toml` for `person_paths`, `migration_paths` and `[size] cap`.
+Read `.rail/config.toml` for `[kinds]`, `person_paths`, `migration_paths` and `[size] cap`.
 
 | From the trace | Goes into the ticket as |
 |---|---|
 | The paths the change must edit | `scope_paths`, as narrow as the trace allows |
-| A path under `person_paths` or `migration_paths` | tier `PERSON`; for a migration, `reversibility` and `rollback` |
+| A kind of change a revert doesn't undo: `data-loss`, `data-shape`, `data-exposure`, `external-effect`, `access`, `runs-with-secrets`, `controls`, `infrastructure`, `money`, `licence`, `public-release` | tier `PERSON`, `person_reason` naming it (several separated by `; `); for a migration, `reversibility` and `rollback` |
 | Each untested neighbour | a `Check:` line that exercises it, or a ticket that adds the test first (`after`) |
 | A contract something outside relies on | a line in `## Out of scope` saying it does not change, or a `Check:` that it still holds |
 | An expected size over the cap | a split into several tickets (`rail-slice`) |

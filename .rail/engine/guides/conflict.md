@@ -1,8 +1,3 @@
----
-name: rail-conflict
-description: Resolve a rebase or merge conflict by deciding the final behaviour first. Use when rail next or rail advance answers REBASING, or when any rebase or merge stops on a conflict.
----
-
 # Resolve a conflict
 
 - **Assumes:** a rebase onto the base branch stopped on a conflict in the ticket's worktree.

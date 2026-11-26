@@ -1,15 +1,10 @@
----
-name: rail-findings
-description: Answer the findings of a Rail review so the ticket passes in the next round. Use when rail next returns a ticket with open review findings.
----
-
 # Answer review findings
 
 - **Assumes:** a review left findings on your ticket, and the brief lists them. You are in the ticket's
   worktree.
-- **Produces:** an answer to every finding with `rail answer NN F1 fixed|declined|parked "why"`, and the
-  fixes.
-- **Done means:** no finding is unanswered, the checks pass again, and you ran `rail advance`.
+- **Produces:** an answer to every blocking finding with `rail answer NN F1 fixed|declined|parked "why"`, and
+  the fixes. An advisory finding doesn't hold the ticket: answer it too, or leave it unanswered for the sweep.
+- **Done means:** no blocking finding is unanswered, the checks pass again, and you ran `rail advance`.
 
 After your fixes the reviewer reads the whole change again. So the aim is one more round, not several.
 
