@@ -1392,25 +1392,19 @@ def person_next(f):
     return f.state == "in-ci" and not f.auto and f.pr_open and f.pushed and not f.behind
 
 
-def show_read_these(project, f, look=False):
-    """Put each "Read these" item on its line of the pull request, as a review comment, once per patch. With `look`,
-    an AUTO ticket about to merge with a list that isn't empty gets rail:look: the search is:merged label:rail:look
-    is what a person reads after the fact."""
+def show_read_these(project, f):
+    """Put each "Read these" item on its line of the pull request, as a review comment, once per patch. Nothing
+    marks an AUTO ticket for a person to read afterwards: the list stays in its description and squash message, for
+    whoever chooses to look."""
     from . import readthese
     from .forge import ForgeError
 
-    if not f.pr_open:
-        return
-    posted = project.cache_read("read-these", f.id) == f.patch_id
-    if posted and not look:
+    if not f.pr_open or project.cache_read("read-these", f.id) == f.patch_id:
         return
     found = readthese.items(project, f.t, f.ticket, f.tier, f.ledger, project.changed_files(f.t.ref))
     try:
-        if not posted:
-            readthese.post(project, f.t, f.pr, found)
-            project.cache_write("read-these", f.id, f.patch_id)
-        if look and found and "rail:look" not in f.labels:
-            project.forge.add_labels(f.pr["number"], ["rail:look"])
+        readthese.post(project, f.t, f.pr, found)
+        project.cache_write("read-these", f.id, f.patch_id)
     except ForgeError:
         pass  # the list is in the description either way
 
@@ -1529,7 +1523,7 @@ def forge_merge(project, f, receipts):
     pr = f.pr
     ticket = Ticket(gitx.read_blobs([f"{f.t.ref}:{ticket_path(f.id)}"], project.root)[f"{f.t.ref}:{ticket_path(f.id)}"])
     subject, body = steps.describe(project, f.t, ticket, f.tier)
-    show_read_these(project, f, look=f.auto)
+    show_read_these(project, f)
     requested, why = project.forge.merge(pr["number"], pr["head"]["sha"], f"{subject} (#{pr['number']})", body)
     if requested:
         project.cache_write("merge", f.id, f"{pr['head']['sha']} {int(time.time())}")

@@ -5,7 +5,7 @@ Code cloud session, where `gh pr` and `gh issue` (GraphQL) don't work.
 
 ## One-time setup
 
-`rail init` creates the labels `rail`, `rail:go`, `rail:needs-you`, `rail:hold`, `rail:stop`, `rail:revert` and `rail:look`, and writes
+`rail init` creates the labels `rail`, `rail:go`, `rail:needs-you`, `rail:hold`, `rail:stop` and `rail:revert`, and writes
 `.rail/ruleset.json`.
 The rest is yours, in the repository's settings; a cloud session can't change them:
 
@@ -91,10 +91,10 @@ ship, and after the review.
 - **A person's answer on a line is heard.** A comment a person leaves on a line of the diff reaches the agent
   as the person's note, like a comment on the conversation, with the same filter: only someone who can push
   to the repository speaks for it.
-- **After the fact.** An AUTO ticket merges with nobody reading it. When its list is not empty, the engine sets
-  the label `rail:look` as it asks for the merge. The search `is:pr is:merged label:rail:look` is what to read
-  afterwards; take the label off when you have. What you find wrong, take out with `rail:revert`, or file a
-  ticket for. A PERSON ticket gets no such label: its person reads the list before merging.
+- **After the fact.** An AUTO ticket merges with nobody reading it, and Rail asks nobody to: its change can be
+  undone. The list stays in the pull request's description and in the squash commit's message, so a person who
+  chooses to look, or an agent that gathers such lists for them, finds it there. What you find wrong, take out
+  with `rail:revert`, or file a ticket for.
 - **Generated files fold.** `rail init` writes each `[size] exclude` glob into `.gitattributes` as
   `linguist-generated`, which GitHub folds in a diff. Lockfiles stay in sight. A ticket that changes
   `.gitattributes` is on its own list, because marking a file generated hides it from the diff and from the

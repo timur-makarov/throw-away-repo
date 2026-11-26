@@ -18,6 +18,27 @@ stopped by either. `rail advance` is one of them, and it merges an AUTO ticket w
 policy you set with `[kinds]` and `person_paths` in `.rail/config.toml`. The person's verbs have no allow rule: `rail accept`, `rail drop` and
 `rail init` are judged like any other command, and `rail answer ... --owner` always asks, in every mode.
 
+**Looking things up.** `WebSearch` has an allow rule, so a worker, or you in your own session, can search for a
+fact the repository doesn't hold: a library's behaviour in the installed version, what an error means. The
+build guide tells the worker to write such a fact into the ticket as a `VERIFIED:` row with where it was read
+(`rail docs guides`). Three limits, each on purpose:
+
+- **Fetching a page has no allow rule.** A fetch names a URL, and a URL can carry data out of the repository,
+  so `WebFetch` is left to the session's permission mode: auto mode's classifier judges each one, and a
+  person's own session is asked. To let a documentation host through with no question, add
+  `"WebFetch(domain:docs.example.com)"` to `permissions.allow` in `.claude/settings.json`.
+- **The reviewer, the refuter, the security seat and consult have no web tools.** `[review] command` and
+  `[consult] command` list their tools, and neither search nor fetch is among them. Their word decides a
+  merge, a web page is text nobody here wrote, and a review should come out the same from the same
+  repository. What they need to know of the outside is in the ticket's `VERIFIED:` rows.
+- **A service you look things up in is a tool.** A documentation service, an MCP server or an API with a key is
+  declared as `[tools.NAME]`, so every agent is told of it and a ticket isn't claimed while it is out of reach
+  (`rail docs tools`).
+
+What can be known before the work starts belongs in the contract: the contract writer checks it and writes it
+as a fact, and leaves an `ASSUMED:` row for what it could not check. Looking up during the work is for what
+nobody could foresee.
+
 Auto mode's own rule lists (the `autoMode` setting) can't be set here: Claude Code reads them from user or
 managed settings only, never from a repository. Nothing Rail does needs them changed. The engine makes the
 pushes and merges itself, inside `rail next` and `rail advance`.

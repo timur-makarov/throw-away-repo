@@ -18,6 +18,11 @@ Find the code the change will modify: symbols, routes, commands, tables, setting
 vague to place, say which two or three places it could mean, and ask, or pick one and record it as an
 assumption when no person is present.
 
+When the change rests on something outside the repository (a library's behaviour, an API's limits, a format
+someone else defines), look it up now: the installed dependency's own source and docs first, then the web.
+What you checked goes into the ticket as a fact, with where you read it; what you could not check goes in as
+an `ASSUMED:` row for the worker to verify.
+
 ## 2. Trace outward
 
 From each place, follow what depends on it. Stop where the change can't reach, and say where you stopped.

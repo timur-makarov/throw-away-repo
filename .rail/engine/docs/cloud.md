@@ -149,8 +149,6 @@ The source only files tickets. The runner above picks them up on its own schedul
 - **Revert a merged ticket:** add the label `rail:revert` to its merged pull request. The next run files a
   ticket that takes the change out again, comments with its number, and removes the label; the revert ships,
   is reviewed and merges like any ticket (`rail docs tickets`).
-- **Read what merged with no person:** the search `is:pr is:merged label:rail:look` lists the AUTO tickets whose
-  "Read these" list was not empty. Take the label off when you have read one (`rail docs github`).
 - **Stop everything:** open an issue and give it the label `rail:stop`. While it is open, `rail next`,
   `rail advance` and `rail work` answer `STOPPED` and do nothing, in every session, at their next call: no
   ticket is claimed, shipped, reviewed or merged, and no worker starts. A run already going ends its command

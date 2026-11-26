@@ -19,7 +19,6 @@ LABELS = {
     "rail:stop": ("b60205", "Rail: while an issue with this label is open, Rail does nothing here"),
     # only a person sets it, on a merged pull request; the engine removes it once the revert ticket is filed
     "rail:revert": ("b60205", "Rail: on a merged pull request, files a ticket that reverts it"),
-    "rail:look": ("fbca04", "Rail: merged with no person, and its Read these list is not empty"),  # the engine sets it
 }
 
 STOP_PATHS = re.compile(r"(?im)^[ \t]*paths:[ \t]*(\S.*)$")

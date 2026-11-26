@@ -19,7 +19,8 @@
       "Bash(rail save *)",
       "Bash(rail work *)",
       "Bash(rail provision *)",
-      "Bash(gh run watch *)"
+      "Bash(gh run watch *)",
+      "WebSearch"
     ],
     "deny": [
       "Read(./**/.env)",
