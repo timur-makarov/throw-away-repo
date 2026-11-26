@@ -3,15 +3,21 @@
 
 base_branch = "main"                      # reader: claim, ship, CI, merge
 # A ticket is AUTO or PERSON. AUTO: the engine accepts its contract, the reviewer checks the change, and the engine
-# merges it. PERSON: a person approves the contract and merges; a security seat reviews as well.
-# reader: add (matched against scope_paths) and ship (changed files). A ticket that touches one of these is PERSON
-person_paths = [".rail/bin/**", ".rail/engine/**", ".rail/config.toml", ".claude/**", ".github/workflows/**",
-                "shop/auth.py", "shop/store.py", "pyproject.toml", "requirements-dev.txt"]
-migration_paths = ["**/migrations/**"]    # PERSON as well; tickets touching them need reversibility and rollback
+# merges it. PERSON, only for a change a revert doesn't undo (rail docs kinds): a person approves the contract and
+# merges; a security seat reviews as well.
+# reader: add and amend (matched against scope_paths) and ship (changed files). A ticket that touches one is PERSON
+person_paths = [".rail/bin/**", ".rail/engine/**", ".rail/config.toml", ".rail/sensors/**"]   # the kind controls: Rail's own gates
+migration_paths = ["**/migrations/**", "**/alembic/versions/**"]    # the kind data-loss; tickets touching them need reversibility and rollback
+
+[kinds]                                   # reader: add, amend and ship. A ticket whose scope or changed files match is
+                                          # PERSON. Each key is a kind's id (rail docs kinds), each value its paths here
+runs-with-secrets = [".github/workflows/**", ".claude/**"]
+access = ["shop/auth.py"]                 # who may read, write or delete
+data-shape = ["shop/store.py"]            # the keys of the stored records
 
 [commands]
 setup = ''                                # reader: claim (after each worktree is made) and CI
-verify = '''python3 -m pytest -q && ruff check . && gitleaks git --no-banner --redact --log-opts="$RAIL_BASE..HEAD" . && { git diff --quiet "$RAIL_BASE" HEAD -- requirements-dev.txt pyproject.toml || pip-audit -r requirements-dev.txt; }'''
+verify = '''python3 -m pytest -q && ruff check . && gitleaks git --no-banner --redact -v --log-opts="$RAIL_BASE..HEAD" . && { git diff --quiet "$RAIL_BASE" HEAD -- requirements-dev.txt pyproject.toml || pip-audit -r requirements-dev.txt; }'''
                                           # reader: ship and CI. The whole project: tests, lint, a secret scan, a dependency scan
 provision = '''python3 -m pip install --quiet --break-system-packages -r requirements-dev.txt pip-audit && { command -v gitleaks >/dev/null || { curl -fsSL -o /tmp/gitleaks.tgz https://github.com/gitleaks/gitleaks/releases/download/v8.24.2/gitleaks_8.24.2_linux_x64.tar.gz && echo 'fa0500f6b7e41d28791ebc680f5dd9899cd42b58629218a5f041efa899151a8e  /tmp/gitleaks.tgz' | sha256sum -c - && tar -xzf /tmp/gitleaks.tgz -C /usr/local/bin gitleaks && rm /tmp/gitleaks.tgz; }; }'''
                                           # reader: rail provision, next in a cloud session, and CI. Installs, as root, what the
@@ -20,22 +26,46 @@ timeout_secs = 900                        # reader: every command run: setup, ve
                                           # Every command runs through bash -o pipefail: a failure anywhere in a pipe
                                           # fails it, so `pytest | tail -20` fails with pytest. A tool the shell can't
                                           # find (exit 127) is recorded as could not run, not as a failure
+setup_timeout_secs = 0                    # reader: claim, adopt and CI; setup's own limit, such as for a cold build
+                                          # in a new worktree. 0: timeout_secs
+verify_timeout_secs = 0                   # reader: ship and CI; verify's own limit. 0: timeout_secs. A check
+                                          # or a review run still stops at timeout_secs
 base_checks = true                        # reader: next, at a ticket's first claim; runs each Check: once on the
                                           # untouched base and records red or green; never a gate
 
 [size]                                    # reader: ship and CI; changed lines, generated files and lockfiles excluded
-cap = 600                                 # an AUTO change over this is offered a split once, then becomes PERSON
-exclude = []
+cap = 600                                 # an AUTO change over this is offered a split once; size raises no tier
+exclude = ["**/*_pb2.py", "**/*_pb2_grpc.py"]
+
+[tests]                                   # reader: nothing yet. Globs of the files that hold tests and their runner's
+                                          # settings; rail init fills it from the language profiles (rail docs languages)
+paths = ["**/tests/**", "**/test_*.py", "**/*_test.py", "**/conftest.py", "**/pytest.ini"]
 
 [retry]
 budget = 2                                # reader: next and advance; the same failure in a row at one step, then
-                                          # consult, then a person
-cap = 5                                   # reader: next and advance; failures at one step of any kind, then a person
+                                          # consult, then stuck
+cap = 5                                   # reader: next and advance; failures at one step of any kind, then stuck.
+                                          # A stuck AUTO ticket is dropped with a record; a PERSON one waits for a person
 
 [worker]                                  # reader: next; the model and effort the answer names for a ticket's work,
                                           # one rung per failed attempt at the current step. Empty: none is named
 ladder = ["claude-sonnet-5-5:medium", "claude-sonnet-5-5:high", "claude-opus-5-5:medium"]
 person_ladder = ["claude-opus-5-5:medium", "claude-opus-5-5:high"]   # a PERSON ticket starts higher
+contract = "claude-opus-5-5:high"         # writing a ticket's contract (TICKET_LINT), filing a sweep's tickets
+                                          # (SWEEP_TICKETS) and deciding on a dropped after (AFTER_DROPPED); empty:
+                                          # the ladder's rung
+# reader: work; the worker rail work starts in the answer's cwd, with the brief on stdin and RAIL_MODEL, RAIL_EFFORT and
+# RAIL_SESSION (a session to resume, or empty) set. Every flag lives here: --max-turns and --max-budget-usd end one run
+# where the CLI honours them (not every version honours --max-turns); timeout_minutes is the bound every run has.
+# --autocompact 400000 makes the worker summarise its context before it reaches 400,000 tokens, not near the model's
+# full window (the reviewer's command has the same flag)
+command = '''claude -p --output-format stream-json --verbose ${RAIL_MODEL:+--model "$RAIL_MODEL"} ${RAIL_EFFORT:+--effort "$RAIL_EFFORT"} --permission-mode auto --permission-prompts none --max-turns 300 --max-budget-usd 15 --autocompact 400000 ${RAIL_SESSION:+--resume "$RAIL_SESSION"}'''
+timeout_minutes = 90                      # reader: work; one worker run, wall clock. Keep it under the Bash tool's
+                                          # BASH_MAX_TIMEOUT_MS in .claude/settings.json
+ticket_usd = 40                           # reader: next; dollars the runs of one ticket (worker and review) may report
+                                          # since a person last acted before it waits for a person. 0: off
+daily_usd = 0                             # reader: next, work; dollars the runs of every ticket may report in 24 hours
+                                          # before next rests and work starts no worker. 0: off
 
 [sweep]
 after = 20                                # reader: next; changes merged with no review since the last sweep:
@@ -43,40 +73,74 @@ after = 20                                # reader: next; changes merged with no
 every = 20                                # reader: next; tickets merged since the last sweep, reviewed or not. The sweep
                                           # then gathers the findings reviewers parked and the checks they proposed. 0: off
 
+[stats]
+held_days = 14                            # reader: stats; a merged ticket counts as held once it has been merged
+                                          # this long with no revert and no later ticket naming it in caused_by
+
 [map]
 depth = 1                                 # reader: doc-lint; the directory depth ## Areas must cover
 ignore = []
 
 [review]                                  # reader: advance; runs in the ticket's worktree with the brief on stdin
 # the command runs through bash -o pipefail, as every command here does; --json-schema takes the schema's text, not a
-# path. The engine resets the worktree afterwards
-command = '''claude -p --safe-mode --system-prompt-file .rail/engine/reviewer.md --tools Read,Grep,Glob,Bash,Edit,Write --allowedTools Bash,Edit,Write --disallowedTools 'Bash(git push *)' --output-format json --json-schema "$(cat .rail/engine/review-v1.json)"'''
+# path. RAIL_REVIEW_PROMPT and RAIL_REVIEW_SCHEMA are the paths of .rail/engine/reviewer.md and review-v1.json as the
+# base branch has them, so a ticket can't rewrite the prompt of its own review. The engine resets the worktree afterwards
+command = '''claude -p --safe-mode --effort high --autocompact 400000 --system-prompt-file "$RAIL_REVIEW_PROMPT" --tools Read,Grep,Glob,Bash,Edit,Write --allowedTools Bash,Edit,Write --disallowedTools 'Bash(git push *)' --output-format json --json-schema "$(cat "$RAIL_REVIEW_SCHEMA")"'''
 
-model = ""                                # the model the reviewer runs on, such as "claude-opus-5-5"; empty is the CLI's default
-skip_paths = ["docs/**", "README.md"]     # an AUTO change gets no reviewer when every file it changes matches one of
+model = "claude-opus-5-5"                 # the model the reviewer, refuter and security seat run on; empty is the
+                                          # CLI's default. The effort is --effort in the command
+skip_paths = []                           # an AUTO change gets no reviewer when every file it changes matches one of
                                           # these, such as ["docs/**"]. The paths decide, not the ticket's author
 
 [claim]
 stale_minutes = 30                        # reader: next; another session's work with no journal event for this long is
-                                          # resumed. Keep it above your longest command (timeout_secs)
-save_minutes = 10                         # reader: the save hooks and advance; changed files are saved at least this
-                                          # often, which is also the sign that a session is at work on the ticket
+                                          # resumed. Keep it above your longest command's limit plus save_minutes;
+                                          # rail work saves while its worker runs, so a worker run doesn't count
+save_minutes = 10                         # reader: advance, rail save and rail work; a ticket with nothing to save and
+                                          # no pushed event for this long gets a saved event, the sign that a session is
+                                          # at work on it; rail work saves this often while its worker runs. How often
+                                          # the save hook runs is the -mmin number in its command in
+                                          # .claude/settings.json; keep the two the same
 
 [consult]                                 # reader: the consult pack; read-only, with the brief on stdin
-command = "claude -p --safe-mode --tools Read,Grep,Glob"
-model = "claude-fable-5-2"                # the model consult runs on; empty is the CLI's default
+command = "claude -p --safe-mode --effort high --autocompact 400000 --tools Read,Grep,Glob"
+model = "claude-fable-5-2"                # the model consult runs on; empty is the CLI's default. The effort is
+                                          # --effort in the command
                                           # point it at another vendor's CLI when you have one; claude is labelled same-model
 
-[guides]                                  # reader: next and advance; a page named in the brief when its situation
-                                          # applies. A hint: nothing fails when it is ignored. Delete a line to give
-                                          # no guide (rail docs guides)
-start = ".claude/skills/rail-build/SKILL.md"
+[init]
+skill_dirs = [".claude/skills"]           # reader: init; the folders the skills are written to. An agent other than
+                                          # Claude Code reads SKILL.md files from its own folder: add it here and
+                                          # run rail init again. The skill pages in [guides] name the first
+other_manifests = []                      # reader: init, doctor and the sweep; globs of tracked manifests that mark no
+                                          # code of the project's own, such as a package.json kept for a formatter
+
+[guides]                                  # reader: next and advance; a page whose text the brief carries when its
+                                          # situation applies, the whole page or each #Heading section named. A
+                                          # hint: nothing fails when it is ignored. Delete a line to give no guide
+                                          # (rail docs guides)
+start = ".rail/engine/guides/build.md"
 stuck = ".claude/skills/rail-debug/SKILL.md"
-findings = ".claude/skills/rail-findings/SKILL.md"
-conflict = ".claude/skills/rail-conflict/SKILL.md"
+findings = ".rail/engine/guides/findings.md"
+conflict = ".rail/engine/guides/conflict.md"
 contract = ".claude/skills/rail-blast-radius/SKILL.md"
-split = ".claude/skills/rail-slice/SKILL.md"
+split = ".claude/skills/rail-slice/SKILL.md#2. Three tests for each draft#When the engine offered the split"
 setup = ".claude/skills/rail-verify/SKILL.md"
+
+# [tools.payments]                        # reader: next, review and doctor; one table for each thing the work
+# use = "The payment service in test mode: create customers and charges in checks"   # reaches outside the
+# env = ["PAY_TEST_KEY"]                  # repository (rail docs tools). Names only, never values: a ticket is
+# probe = 'curl -sf --oauth2-bearer "$PAY_TEST_KEY" https://api.example.com/v1/balance >/dev/null'   # not claimed while one
+# review = false                          # is not set. true: the reviewer, the refuter and consult are told too
+# ci = false                              # true: a test or dev key that a pull request's run may be given
+
+# [[sensors]]                             # reader: ship and CI, last; a tool whose output lines fail the ship when
+# id = "duplication"                      # they are on lines the change adds (rail docs sensors). None is on by default
+# paths = ["src/**"]                      # runs only when the change touches these
+# command = 'jscpd --config "$RAIL_SENSORS/jscpd.json" --reporters xcode .'   # RAIL_SENSORS: the base branch's .rail/sensors/
+# ok_exit = [0]                           # no violations
+# violations_exit = [1]                   # violations printed, one a line: path:line: message
+# fix = "Call the code that already does this, or move both copies into one function."
 
 [[rules]]                                 # reader: ship and CI; structure rules on added lines (rail docs rules)
 id = "no-new-suppressions"
@@ -87,25 +151,28 @@ fix = "Fix the cause instead of silencing the check."
 [[rules]]
 id = "shortcut-names-its-ticket"          # a corner cut on purpose is marked SHORTCUT(NN): with the ticket's number
 forbid = ["SHORTCUT:", "SHORTCUT()", "SHORTCUT(NN)", "SHORTCUT(TODO)"]
-allow = [".claude/**"]                    # the guides write the marker's form
+allow = [".claude/**", ".rail/engine/**"] # the guides and the docs write the marker's form
 fix = "Write SHORTCUT(NN): with this ticket's number, the known limit, and what to do when it is reached."
 
 [[rules]]
-id = "records-through-store"              # AGENTS.md: all reads and writes of stored records go through shop/store.py
-files = "shop/**"
-forbid = ["_ORDERS", "_CUSTOMERS", "_PRODUCTS", "_CODES"]
-allow = ["shop/store.py"]
-fix = "Read and write records with the functions in shop/store.py; add one there if none fits."
+id = "sensor-marker-names-its-ticket"     # a sensor's violation answered on purpose is marked SENSOR(NN): with the ticket's number
+forbid = ["SENSOR:", "SENSOR()", "SENSOR(NN)", "SENSOR(TODO)"]
+allow = [".claude/**", ".rail/engine/**"] # the guides and the docs write the marker's form
+fix = "Write SENSOR(NN): with this ticket's number and why the sensor is wrong about this line."
 
 [[rules]]
-id = "roles-in-auth"                      # AGENTS.md: who may do what is decided in shop/auth.py and nowhere else
-files = "shop/**"
-forbid = ["ROLES", "\"admin\"", "\"clerk\"", "\"viewer\""]
-allow = ["shop/auth.py"]
-fix = "Ask shop/auth.py: call auth.allowed(request, action) instead of checking roles here."
+id = "todo-names-its-ticket"              # work left for later names the open ticket that will do it: TODO(NN):
+forbid = ["TODO:", "FIXME:", "TODO()", "FIXME()", "TODO(NN)", "FIXME(NN)", "# TODO ", "// TODO ", "# FIXME ", "// FIXME "]
+allow = [".claude/**", ".rail/engine/**"] # the guides and the docs write the marker's form
+fix = "File the work with rail add, then write TODO(NN): with that ticket's number and what is left. Or do it now."
 
-[[rules]]
-id = "migrations-home"                    # AGENTS.md: a change to stored data's shape is a numbered file in migrations/
-files = "**/*.sql"
-only_in = "migrations/**"
-fix = "Put schema changes in migrations/ as the next numbered file, such as migrations/0002_name.sql."
+[[profiles]]                              # written by rail init from the manifests it found (rail docs languages)
+name = "python"
+paths = "**"
+
+[[rules]]                                 # from the python profile
+id = "no-new-python-suppressions"
+files = "**/*.py"
+forbid = ["# type: ignore", "# pyright: ignore", "@pytest.mark.skip", "@pytest.mark.xfail"]
+fix = "Fix the cause instead of silencing the check."
+why = "the Python profile: a type checker silenced, or a test skipped or expected to fail"

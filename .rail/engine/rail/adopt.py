@@ -8,7 +8,7 @@ import os
 import re
 import tempfile
 
-from . import gitx, rules, steps
+from . import config as configmod, gitx, steps
 from .project import PRODUCT_SPEC
 from .state import raised_tier
 from .util import RailError, match_any, run_shell, tail
@@ -66,17 +66,16 @@ def files(project, head):
 
 def tier(project, changed, size):
     """The tier the branch's paths and size give, and why."""
-    needed, reason = raised_tier(project, changed)
+    needed, kinds = raised_tier(project, changed)
     if needed == "PERSON":
-        hits = [p for p in changed if match_any(project.config[reason], p)]
-        return "PERSON", f"it changes {', '.join(hits[:5])}, on {reason}"
+        kind, hits, key = kinds[0]
+        return "PERSON", f"it changes {', '.join(hits[:5])}, on {f'[kinds] {kind}' if key == 'kinds' else key}"
     cap = project.config["size"]["cap"]
-    if rules.size_tier(project, "AUTO", size) == "PERSON":
-        # As for any AUTO ticket, its first ship offers a split before a person has to merge it.
-        return "AUTO", (f"no changed file is on person_paths or migration_paths; at {size} lines it is over [size]"
-                        f" cap of {cap}, so its first ship offers a split, and it becomes PERSON when the split isn't"
-                        " taken")
-    return "AUTO", f"no changed file is on person_paths or migration_paths, and {size} lines are within [size] cap"
+    if size > cap:
+        # As for any AUTO ticket, its first ship offers a split; size raises no tier.
+        return "AUTO", (f"no changed file is on person_paths, migration_paths or [kinds]; at {size} lines it is over"
+                        f" [size] cap of {cap}, so its first ship offers a split")
+    return "AUTO", f"no changed file is on person_paths, migration_paths or [kinds], and {size} lines are within [size] cap"
 
 
 def scope(project, head, changed):
@@ -152,7 +151,7 @@ def gate(project, commands, base_tip, head, run):
             command = project.config["commands"]["setup"]
             if command:
                 code, output, ms = run_shell(command, path, {"RAIL_TICKET": "", "RAIL_BASE": project.base_ref},
-                                             project.config["commands"]["timeout_secs"])
+                                             configmod.timeout(project.config, "setup"))
                 if code != 0:
                     detail = "timeout" if code is None else f"exit {code}"
                     run.steps.append({"step": "setup", "status": "ran", "result": "fail",

@@ -11,11 +11,11 @@ and `rail doctor` reports when they are missing.
 
 **The loop runs without asking.** Allow rules cover the agent's own verbs (`rail next`, `advance`, `add`,
 `adopt`, `answer`, `amend`, `status`, `stats`, `context`, `docs`, `doctor`, `intake`, `sweep`, `source`, `consult`, `save`,
-`provision`) and
+`provision`, `work`) and
 `gh run watch`.
 A matching allow rule is decided before any prompt and before auto mode's classifier, so the loop isn't
 stopped by either. `rail advance` is one of them, and it merges an AUTO ticket with no person: that is the
-policy you set with `person_paths` in `.rail/config.toml`. The person's verbs have no allow rule: `rail accept`, `rail drop` and
+policy you set with `[kinds]` and `person_paths` in `.rail/config.toml`. The person's verbs have no allow rule: `rail accept`, `rail drop` and
 `rail init` are judged like any other command, and `rail answer ... --owner` always asks, in every mode.
 
 Auto mode's own rule lists (the `autoMode` setting) can't be set here: Claude Code reads them from user or
@@ -87,10 +87,15 @@ No git hooks are installed: they would collide with a project's own hook manager
 checks. The sandbox is turned on with `"sandbox": {"enabled": true}`; where its tools (bubblewrap and socat
 on Linux) are missing, Claude Code runs without it and says so.
 
-Two settings let the engine work inside it. `rail advance` and `rail next` are in `excludedCommands`, so a
-call that holds only those commands runs outside the sandbox: the engine writes the journal, which the deny
-rule on `.rail/journal/**` otherwise forbids to every sandboxed command, the engine included. The price is
-that `verify` and the checks, which `rail advance` starts, run outside the sandbox in such a call.
+Two settings let the engine work inside it. `rail advance`, `rail next` and `rail work` are in
+`excludedCommands`, so a call that holds only those commands runs outside the sandbox: the engine writes the
+journal, which the deny rule on `.rail/journal/**` otherwise forbids to every sandboxed command, the engine
+included. The price is that `verify`, the checks and the engine's re-run of a reviewer's evidence commands,
+which `rail advance` starts, run outside the sandbox in such a call. The worker `rail work` starts is a `claude -p`
+process with the repository's settings: their hooks run in it, the guard included, while their allow rules
+apply only in a folder Claude Code trusts. The default `[worker] command` uses auto mode, and
+`--permission-prompts none` turns a call nobody can approve into a denial the worker reads.
 `api.anthropic.com` is an allowed domain, so the reviewer, which is a `claude -p` process the engine starts,
-can answer when `rail advance` is one command of a longer call and stays sandboxed. Add the hosts your own
-`verify` needs to `sandbox.network.allowedDomains`.
+can answer when `rail advance` is one command of a longer call and stays sandboxed. `rail init` adds the
+package registries of the languages it finds (`rail docs languages`). Add the other hosts your own `verify`
+needs to `sandbox.network.allowedDomains`.

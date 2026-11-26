@@ -7,10 +7,12 @@ reads its structured output, binds the run to the patch, and resets the worktree
 import json
 import os
 import re
+import shlex
+import tempfile
 
-from . import areas, gitx
+from . import areas, flakes, gitx
 from .project import event, review_path, ticket_path
-from .ticket import Ticket
+from .ticket import KINDS, Ticket
 from .util import could_not_run, match_any, now_iso, run_shell, tail
 
 SECURITY = """Security. This list is a checklist, not a ceiling. Report only what someone could exploit in this application:
@@ -47,10 +49,16 @@ SECURITY_LOOK_FOR = ("Only security: trust boundaries, input handling, auth, sec
 
 SEVERITIES = ("blocking", "advisory", "parked")
 EVIDENCE_LIMIT = 2000
+SCRIPTS, SCRIPT_LIMIT = 3, 8000  # untracked files an evidence command names, kept in the journal: how many, how long
 GUIDANCE_LIMIT = 8000  # characters of REVIEW.md in a brief, all files together
 
 BASE_GREEN = ("Every check in the Done Contract already passed on the base branch before this work began, so the checks"
               " alone do not show the work was done. Look at whether the change is tested.")
+
+
+def kind_line(k):
+    where = f"{k.get('file')}:{k['line']}" if k.get("line") else k.get("file")
+    return f"{k.get('kind')}: {where}: {k.get('why')}"
 
 
 def load_doc(text, nn):
@@ -86,10 +94,14 @@ class Ledger:
         return self.last(fid).get("outcome")
 
     def unanswered(self):
-        """Open findings the author must answer: fix and mark fixed, decline, or park."""
+        """Open blocking findings the author must answer: fix and mark fixed, decline, or park. An advisory finding
+        holds nothing: it stays open until answered, and the sweep gathers it once the ticket merged."""
         waiting = set(self.disputed())
         return [fid for fid in self.findings if self.outcome(fid) == "open" and not self.last(fid).get("disputed")
-                and fid not in waiting]
+                and fid not in waiting and self.findings[fid].get("severity") == "blocking"]
+
+    def open_advisory(self):
+        return [fid for fid, f in self.findings.items() if self.outcome(fid) == "open" and f.get("severity") == "advisory"]
 
     def upheld_before(self, fid):
         return any(e.get("by") == "refuter" and e.get("outcome") == "open" for _, e in self.findings[fid]["history"])
@@ -125,8 +137,9 @@ class Ledger:
         return [r for r in self.doc["runs"] if r.get("role") == role and (patch_id is None or r.get("patch_id") == patch_id)]
 
     def run_after(self, role, index):
+        """A run of `role` with a verdict after `index`: a timeout or invalid output (counted: false) is none."""
         return any(e.get("event") == "step" and e.get("step") == role and e.get("status") == "ran" and i > index
-                   for i, e in enumerate(self.events))
+                   and e.get("counted", True) for i, e in enumerate(self.events))
 
     def needed_run(self, patch_id, tier):
         """The role whose run the patch still needs, or None."""
@@ -147,15 +160,24 @@ class Ledger:
             and self.needed_run(patch_id, tier) is None
 
     def asked_for_person(self):
-        """What review and security runs said a person should see before the merge, each sentence once."""
-        return list(dict.fromkeys(r["needs_person"] for r in self.doc["runs"] if r.get("needs_person")))
+        """What review and security runs found that a revert doesn't undo, each item once, as "kind: file:line: why".
+        A run stored by an older engine may hold a `needs_person` sentence instead."""
+        found = []
+        for r in self.doc["runs"]:
+            found += [kind_line(k) for k in r.get("kinds") or [] if isinstance(k, dict)]
+            if r.get("needs_person"):
+                found.append(r["needs_person"])
+        return list(dict.fromkeys(found))
 
-    def describe(self, fid, with_answer=True):
+    def describe(self, fid, with_answer=True, scripts=False):
         f = self.findings[fid]
         where = f"{f.get('file')}:{f['line']}" if f.get("line") else f.get("file")
         text = f"{fid} ({f.get('severity')}, {f.get('role')}) {where}: {f.get('claim')}"
         if f.get("evidence"):
             text += f"\n    evidence: $ {f['evidence'].get('command')}\n    {tail(f['evidence'].get('output', ''), 8, 600)}"
+            for path, script in (f["evidence"].get("scripts") or {}).items() if scripts else ():
+                text += f"\n    {path}, the reviewer's scratch file (gone from the worktree):\n" + \
+                        "\n".join("      " + line for line in script.splitlines())
         if with_answer and f["history"]:
             last = self.last(fid)
             text += f"\n    now {last.get('outcome')} (by {last.get('by')})" + (f": {last.get('reason')}" if last.get("reason") else "")
@@ -178,17 +200,20 @@ def project_conventions(project, ref):
 
 
 def review_guidance(project, ref):
-    """The project's REVIEW.md files at the ticket's ref: the root one, then one in each directory above a changed
-    file, shallowest first. Empty when there is none. Cut at GUIDANCE_LIMIT characters, saying which files were."""
+    """The project's REVIEW.md files: the root one, then one in each directory above a file the ticket changed,
+    shallowest first. They are read from the base branch, not from the ticket's: the change under review doesn't
+    write what its own review is told, and a REVIEW.md it adds or edits counts from the next ticket on. Empty when
+    there is none. Cut at GUIDANCE_LIMIT characters, saying which files were."""
     dirs = {""}
     for path in project.changed_files(ref):
         parts = path.split("/")[:-1]
         dirs.update("/".join(parts[:n]) for n in range(1, len(parts) + 1))
     paths = [f"{d}/REVIEW.md" if d else "REVIEW.md" for d in sorted(dirs, key=lambda d: (d.count("/") + bool(d), d))]
-    blobs = gitx.read_blobs([f"{ref}:{p}" for p in paths], project.root)
+    base = project.base_ref
+    blobs = gitx.read_blobs([f"{base}:{p}" for p in paths], project.root)
     parts, cut, room = [], [], GUIDANCE_LIMIT
     for path in paths:
-        text = (blobs.get(f"{ref}:{path}") or "").strip()
+        text = (blobs.get(f"{base}:{path}") or "").strip()
         if not text:
             continue
         if len(text) > room:
@@ -249,12 +274,26 @@ def brief(project, f, role, ledger, disputed=None):
                     "doesn't hold, return an empty list. `summary` says why. When it has evidence, run the command again.")
         job = f"Decide whether finding {disputed} holds. You are the refuter."
     guidance = review_guidance(project, ref)
+    patch = project.patch_id(ref)
+    flaky = list(dict.fromkeys(flakes.name(x) for x in flakes.of(t.events) if x["patch_id"] == patch))
+    from . import sensors
+    marked = sensors.markers(project, ref)
+    from . import tools
+    reviewer_tools = tools.lines(project, review=True)
     parts = [
         f"# Review brief: ticket {t.id}, {f.tier}", "", f"This run's job: {job}", "",
         "## The ticket", ticket_text.strip(), "",
         f"Risk: tier {f.tier}. scope_paths: {', '.join(f.ticket.scope)}.", "",
         *((first_contract(project, t) or []) if role == "review" else []),
         *([BASE_GREEN, ""] if role == "review" and checks_green_on_base(t) else []),
+        *(["## Flaky checks on this change",
+           "Each of these both failed and passed on this same code. It may be an old flake, or a race this change"
+           " brought in:", *[f"- `{name}`" for name in flaky], ""] if flaky and role != "refuter" else []),
+        *(["## Sensor markers this change adds",
+           "Each line below tells a sensor that its violation there is wrong or accepted. Judge the reason: a marker"
+           " with no reason that holds is a finding.", *[f"- {line}" for line in marked], ""]
+          if marked and role in ("review", "security") else []),
+        *(["## Tools", *reviewer_tools, ""] if reviewer_tools else []),
         "## The diff", "```diff", diff, "```", "",
         "## Areas this change touches", "| Area | Paths | Holds |", "|---|---|---|", rows, "",
         "Directories:", found["digest"], "",
@@ -274,6 +313,28 @@ def brief(project, f, role, ledger, disputed=None):
 
 
 # --- running and reading a review -------------------------------------------------------------
+
+REVIEWER_FILES = {"RAIL_REVIEW_PROMPT": "reviewer.md", "RAIL_REVIEW_SCHEMA": "review-v1.json"}
+
+
+def reviewer_files(project, folder):
+    """{RAIL_REVIEW_PROMPT, RAIL_REVIEW_SCHEMA}: paths of the reviewer's system prompt and of the schema its answer
+    must match, as the base branch has them, written into `folder` for one run. The review command runs in the
+    ticket's worktree, where both files are the ticket's own copies: read from there, a change could rewrite the
+    prompt of its own review. A base branch without them (a project that keeps no engine there) gets the running
+    engine's."""
+    held = gitx.read_blobs([f"{project.base_ref}:.rail/engine/{name}" for name in REVIEWER_FILES.values()], project.root)
+    env = {}
+    for var, name in REVIEWER_FILES.items():
+        text = held.get(f"{project.base_ref}:.rail/engine/{name}")
+        if text is None:
+            with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), name)) as f:
+                text = f.read()
+        env[var] = os.path.join(folder, name)
+        with open(env[var], "w") as f:
+            f.write(text)
+    return env
+
 
 
 def _structured(stdout):
@@ -297,7 +358,19 @@ def validate(project, head, nn, data, ledger, role, disputed):
     inside it, and `repeats` names an earlier finding of this ticket. Returns a list of errors."""
     if not isinstance(data, dict) or not isinstance(data.get("summary"), str) or not isinstance(data.get("findings"), list):
         return ["the output is not a review/v1 object with summary and findings"]
-    errors = [] if isinstance(data.get("needs_person", ""), str) else ["needs_person is not a string"]
+    errors = []
+    kinds = data.get("kinds", [])
+    if not isinstance(kinds, list):
+        errors.append("kinds is not a list")
+        kinds = []
+    for n, k in enumerate(kinds):
+        where = f"kinds[{n}]"
+        if not isinstance(k, dict) or set(k) - {"kind", "file", "line", "why"} or not {"kind", "file", "why"} <= set(k):
+            errors.append(f"{where} doesn't match the schema")
+        elif k["kind"] not in KINDS:
+            errors.append(f"{where}: '{k['kind']}' is not a kind's id ({', '.join(KINDS)})")
+        elif "line" in k and not isinstance(k["line"], int):
+            errors.append(f"{where}: line is not a number")
     allowed = {"severity", "file", "line", "claim", "check", "evidence", "repeats"}
     for n, f in enumerate(data["findings"]):
         where = f"finding {n + 1}"
@@ -335,10 +408,61 @@ def run(project, f, role, receipt, disputed=None, prompt=None):
     ledger = Ledger(t.events, doc)
     prompt = prompt or brief(project, f, role, ledger, disputed)
     timeout = project.config["commands"]["timeout_secs"]
-    code, output, ms = run_shell(project.config["review"]["command"], wt,
-                                 {"RAIL_TICKET": t.id, **model_env(project.config["review"]["model"])}, timeout, stdin=prompt)
+    with tempfile.TemporaryDirectory(prefix="rail-review-") as held:
+        code, output, ms = run_shell(project.config["review"]["command"], wt,
+                                     {"RAIL_TICKET": t.id, **model_env(project.config["review"]["model"]),
+                                      **reviewer_files(project, held)}, timeout, stdin=prompt)
+    # Tracked files back as they were; the reviewer's untracked scratch files stay for the evidence re-runs.
     gitx.git(["reset", "--quiet", "--hard", head], wt)
-    gitx.git(["clean", "-fdq"], wt)
+    try:
+        return _read(project, f, role, receipt, disputed, head, doc, ledger, code, output, ms, timeout)
+    finally:
+        gitx.git(["reset", "--quiet", "--hard", head], wt)  # a re-run may have changed a tracked file too
+        gitx.git(["clean", "-fdq"], wt)
+
+
+def rerun(wt, evidence, timeout):
+    """A finding's evidence with the engine's own run of its command: `rerun` (its exit, null past timeout_secs,
+    and its output's tail), `reproduced` (every non-empty line the reviewer quoted, normalised as failure signatures
+    are, is in the re-run's output), and `scripts`: the text of each untracked file the command names, which the
+    clean-up removes. `reproduced` is a record only: nothing is decided from it."""
+    from .steps import normalise
+
+    scripts = scratch_files(wt, evidence["command"])  # before the command, which may change them
+    code, output, _ = run_shell(evidence["command"], wt, timeout=timeout)
+    quoted = [normalise(line) for line in evidence["output"].splitlines() if line.strip()]
+    seen = normalise(output)
+    result = dict(evidence, rerun={"exit": code, "output_tail": tail(output, 60, EVIDENCE_LIMIT)},
+                  reproduced=code is not None and bool(quoted) and all(line in seen for line in quoted))
+    if scripts:
+        result["scripts"] = scripts
+    return result
+
+
+def scratch_files(wt, command):
+    """{path: text} of the untracked files inside the worktree that `command` names, at most SCRIPTS of them, each cut
+    at SCRIPT_LIMIT characters."""
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        words = command.split()
+    found = {}
+    for word in words:
+        path = os.path.normpath(os.path.join(wt, word.split("::")[0].split("=")[-1]))
+        if len(found) >= SCRIPTS or not path.startswith(os.path.join(wt, "")) or not os.path.isfile(path):
+            continue
+        rel = os.path.relpath(path, wt)
+        if rel in found or gitx.out(["ls-files", "--", rel], wt):
+            continue  # a tracked file is in the commit already
+        with open(path, errors="replace") as fh:
+            text = fh.read(SCRIPT_LIMIT + 1)
+        found[rel] = text if len(text) <= SCRIPT_LIMIT else text[:SCRIPT_LIMIT] + f"\n(cut at {SCRIPT_LIMIT} characters)"
+    return found
+
+
+def _read(project, f, role, receipt, disputed, head, doc, ledger, code, output, ms, timeout):
+    """The run's output: checked, its evidence run again, and recorded. The worktree still holds the scratch files."""
+    t, wt = f.t, f.t.worktree
     step = role
     if code is None:
         receipt.record(step, False, f.patch_id, "timeout", ms, counted=False,
@@ -355,7 +479,8 @@ def run(project, f, role, receipt, disputed=None, prompt=None):
     except ValueError:
         data, meta, errors = None, {}, ["the output is not JSON"]
     if errors:
-        receipt.record(step, False, f.patch_id, f"invalid output: {errors[0]}", ms,
+        # The reviewer's fault, not the author's: not counted, like a timeout.
+        receipt.record(step, False, f.patch_id, f"invalid output: {errors[0]}", ms, counted=False,
                        output=f"The {role} run's output was invalid:\n- " + "\n- ".join(errors) + f"\n\n{tail(output, 30)}")
         return None
 
@@ -368,8 +493,8 @@ def run(project, f, role, receipt, disputed=None, prompt=None):
     for finding in data["findings"]:
         finding = dict(finding)
         if finding.get("evidence"):
-            finding["evidence"] = {"command": finding["evidence"]["command"],
-                                   "output": finding["evidence"]["output"][:EVIDENCE_LIMIT]}
+            finding["evidence"] = rerun(wt, {"command": finding["evidence"]["command"],
+                                             "output": finding["evidence"]["output"][:EVIDENCE_LIMIT]}, timeout)
         if finding.get("repeats"):
             fid = finding["repeats"]
             severity = ledger.findings[fid].get("severity")
@@ -391,13 +516,15 @@ def run(project, f, role, receipt, disputed=None, prompt=None):
         entry["findings"].append(finding)
     if role == "sweep":
         events = []  # the sweep's findings become tickets, not ledger entries
-    asked = data.get("needs_person", "").strip() if role in ("review", "security") else ""
-    if asked:
-        # A change a person should see although nothing blocks it: an AUTO ticket becomes PERSON, never back.
-        entry["needs_person"] = asked
+    found = (data.get("kinds") or []) if role in ("review", "security") else []
+    if found:
+        # Something a revert doesn't undo: recorded on every ticket, and an AUTO ticket becomes PERSON, never back.
+        entry["kinds"] = found
         if f.tier == "AUTO":
             events.append(event(t.id, "tier_raised", **{"from": "AUTO", "to": "PERSON", "reason": "reviewer",
-                                                         "detail": asked}))
+                                                         "kind": found[0]["kind"],
+                                                         "kinds": list(dict.fromkeys(k["kind"] for k in found)),
+                                                         "detail": kind_line(found[0])}))
     if role == "refuter" and not data["findings"]:
         events.append(event(t.id, "finding", id=disputed, outcome="declined", by="refuter", reason=data["summary"]))
     parked_by_refuter = [x["repeats"] for x in entry["findings"]

@@ -1,0 +1,184 @@
+# Rail's terms: one word for one thing. `rail docs terms` prints this list.
+# Each entry: the term, what it means in one sentence, the words Rail's own text doesn't use for it (`not`), and
+# the docs page that defines it. A test in Rail's suite fails when a `not` word stands in Rail's text outside a
+# code span. A project's own words are its own: the list covers what Rail writes, nothing else.
+
+[[terms]]
+term = "person"
+means = "Whoever answers for the repository: approves a contract, merges a PERSON ticket, grants access, decides a wait."
+not = ["human", "humans", "operator", "maintainer"]
+page = "kinds"
+
+[[terms]]
+term = "ticket"
+means = "One change to the repository: a markdown file with its contract, on a branch of its own."
+not = ["work item", "user story"]
+page = "tickets"
+
+[[terms]]
+term = "tier"
+means = "Who accepts a ticket's contract and who merges it: AUTO, the engine; or PERSON, a person."
+not = ["risk level"]
+page = "tickets"
+
+[[terms]]
+term = "contract"
+means = "A ticket's Done Contract, scope and tier, frozen when the ticket is accepted."
+not = []
+page = "contract"
+
+[[terms]]
+term = "Done Contract"
+means = "The section of a ticket that says when it is done: its `Check:` lines."
+not = ["acceptance criteria", "definition of done"]
+page = "tickets"
+
+[[terms]]
+term = "check"
+means = "One `Check:` line of a Done Contract: a command that fails before the work and passes after it."
+not = []
+page = "tickets"
+
+[[terms]]
+term = "scope"
+means = "A ticket's `scope_paths`: the globs its change stays inside."
+not = []
+page = "tickets"
+
+[[terms]]
+term = "kind"
+means = "A sort of change a revert doesn't undo, such as `data-loss` or `access`; a ticket with one is PERSON."
+not = []
+page = "kinds"
+
+[[terms]]
+term = "ship"
+means = "What `rail advance` does with a ticket's work: commit it, then run every step in order."
+not = []
+page = "loop"
+
+[[terms]]
+term = "step"
+means = "One named part of a ship, a review or a merge, recorded in the journal with its result."
+not = []
+page = "journal"
+
+[[terms]]
+term = "attempt"
+means = "One ship that the retry budget counts."
+not = []
+page = "retries"
+
+[[terms]]
+term = "wait"
+means = "A ticket only a person can move on: the answer's `owner` is `person`."
+not = []
+page = "states"
+
+[[terms]]
+term = "brief"
+means = "The text an answer gives whoever acts next, in `action.brief`."
+not = []
+page = "loop"
+
+[[terms]]
+term = "worker"
+means = "The agent that does a ticket's work."
+not = ["implementer", "coder"]
+page = "loop"
+
+[[terms]]
+term = "reviewer"
+means = "The fresh agent the engine starts to review a shipped change."
+not = ["critic"]
+page = "review"
+
+[[terms]]
+term = "refuter"
+means = "The fresh agent that decides a finding its author disputes."
+not = []
+page = "review"
+
+[[terms]]
+term = "finding"
+means = "One problem a reviewer reports in a change, blocking or advisory, which the author answers."
+not = []
+page = "review"
+
+[[terms]]
+term = "consult"
+means = "A second opinion from a different model, asked for when a step keeps failing the same way."
+not = []
+page = "retries"
+
+[[terms]]
+term = "sweep"
+means = "A look back over what merged since the last one: unreviewed changes, parked findings, proposed checks."
+not = []
+page = "sweep"
+
+[[terms]]
+term = "source"
+means = "A file in `.rail/sources/` that turns one signal, such as failed CI runs, into tickets."
+not = []
+page = "sources"
+
+[[terms]]
+term = "guide"
+means = "A short page of craft whose text the engine puts into a brief when its situation applies."
+not = []
+page = "guides"
+
+[[terms]]
+term = "pack"
+means = "An optional feature in a folder of its own, `.rail/packs/NAME/`."
+not = ["plugin", "plug-in"]
+page = "packs"
+
+[[terms]]
+term = "profile"
+means = "What Rail knows about one language: its manifests, commands, rules and generated files."
+not = []
+page = "languages"
+
+[[terms]]
+term = "sensor"
+means = "A ship step backed by a tool, whose output fails only on the lines a change adds."
+not = []
+page = "sensors"
+
+[[terms]]
+term = "violation"
+means = "One line of a sensor's output: a place and a message."
+not = []
+page = "sensors"
+
+[[terms]]
+term = "tool"
+means = "Anything the work reaches outside the repository: a service with a key, a CLI, an MCP server."
+not = []
+page = "tools"
+
+[[terms]]
+term = "area"
+means = "One row of the `## Areas` table in `ARCHITECTURE.md`: a name, its paths and what it holds."
+not = []
+page = "loop"
+
+[[terms]]
+term = "base branch"
+means = "The branch tickets merge into, `base_branch` in the config."
+not = ["mainline", "trunk"]
+page = "loop"
+
+[[terms]]
+term = "journal"
+means = "A ticket's record: its events and its review runs, in `.rail/journal/`, written only by the engine."
+not = []
+page = "journal"
+
+[[terms]]
+term = "event"
+means = "One line of a ticket's journal."
+not = []
+page = "journal"

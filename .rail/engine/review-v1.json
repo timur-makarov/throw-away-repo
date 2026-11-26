@@ -72,9 +72,49 @@
         }
       }
     },
-    "needs_person": {
-      "type": "string",
-      "description": "One sentence on why a person should see this change before it merges although no finding blocks it. Leave it out when no person is needed."
+    "kinds": {
+      "type": "array",
+      "description": "Each thing in the change that a revert doesn't undo, whatever the ticket's tier.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "file",
+          "why"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "data-loss",
+              "data-shape",
+              "data-exposure",
+              "external-effect",
+              "access",
+              "runs-with-secrets",
+              "controls",
+              "infrastructure",
+              "money",
+              "licence",
+              "public-release"
+            ],
+            "description": "The kind's id."
+          },
+          "file": {
+            "type": "string",
+            "description": "Path from the repository root."
+          },
+          "line": {
+            "type": "integer",
+            "description": "Line in the file as it is after the change."
+          },
+          "why": {
+            "type": "string",
+            "description": "One sentence on what the change does."
+          }
+        }
+      }
     }
   }
 }

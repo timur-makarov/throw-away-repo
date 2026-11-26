@@ -1,7 +1,9 @@
 +++
 title = "Say what changes, as an imperative"
 tier = "AUTO"                      # AUTO: the reviewer checks it, the engine merges. PERSON: a person approves this
-                                   # contract and merges. Paths and size can raise AUTO to PERSON; nothing lowers it
+                                   # contract and merges. A kind's paths can raise AUTO to PERSON; nothing lowers it
+person_reason = ""                 # on PERSON: what a revert doesn't undo, as a kind's id and where, such as
+                                   # "access: src/auth/session.py". Separate several with "; "
 scope_paths = ["src/feature/**"]   # globs; a change outside them fails at ship
 after = []                         # ticket IDs that must merge first
 caused_by = ""                     # on a fix ticket: the ticket that caused the defect
@@ -24,7 +26,11 @@ external_id = ""                   # "github#123" or "PROJ-123"
 - ASSUMED: (a fact the work rests on; after the claim, verify it and change ASSUMED to VERIFIED; if it can't be checked, decide it and write "decided, not checked:")
 
 ## Look at
-(written before ship: what a reader of the change should check)
+(written before ship: what a reader of the change should check; "not tested: X, because Y" for what you didn't
+test; "Noticed:" for a problem outside this ticket that you left alone)
+
+## Tried
+(written after a failed attempt: one line for what was tried and how it failed)
 
 ## Split
 (optional work breakdown)
