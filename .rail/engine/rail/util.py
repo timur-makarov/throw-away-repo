@@ -64,17 +64,25 @@ def age(text):
     return f"{int(seconds // 86400)}d"
 
 
-# Globs: '**' matches across directories, '*' and '?' stay inside one path segment,
-# and a trailing '/' means everything below that directory.
+# Globs: '**' matches across directories, '*' and '?' stay inside one path segment, '{a,b}' matches either
+# alternative (one level, no nesting), and a trailing '/' means everything below that directory.
 _GLOBS = {}
 
 
 def _glob_regex(pattern):
     if pattern.endswith("/"):
         pattern += "**"
-    out, i = ["^"], 0
+    return re.compile("^" + _glob_body(pattern) + "$")
+
+
+def _glob_body(pattern):
+    out, i = [], 0
     while i < len(pattern):
-        if pattern.startswith("**/", i):
+        close = pattern.find("}", i) if pattern[i] == "{" else -1
+        if close > 0 and "," in pattern[i:close]:
+            out.append("(?:" + "|".join(_glob_body(alt) for alt in pattern[i + 1:close].split(",")) + ")")
+            i = close + 1
+        elif pattern.startswith("**/", i):
             out.append("(?:.*/)?")
             i += 3
         elif pattern.startswith("**", i):
@@ -89,8 +97,7 @@ def _glob_regex(pattern):
         else:
             out.append(re.escape(pattern[i]))
             i += 1
-    out.append("$")
-    return re.compile("".join(out))
+    return "".join(out)
 
 
 def globmatch(pattern, path):
@@ -116,11 +123,25 @@ AFTER_SHELL = []  # called after every shell command: what the engine remembers 
 COULD_NOT_RUN = {126: "found but could not be run", 127: "command not found"}
 
 
+def tried_help(step, ticket):
+    """What a brief says after a failed attempt at the work itself: verify, a Check: line or a sensor. A failed lint
+    or scope check is a slip, not an attempt."""
+    if step not in ("verify", "checks", "sensors"):
+        return ""
+    return (f"Before you try again, write one line under \"## Tried\" in {ticket}: what you tried and how it failed."
+            " The next attempt reads it, and it may start with none of what you know now.")
+
+
 # What to do about it, for the agent's brief.
 MISSING_HELP = ("Nothing was checked: the shell couldn't start the command or a tool it calls, which isn't on this"
                 " machine or isn't executable. If your change removed, renamed or broke it, put it back. Otherwise"
                 " install it here to go on, and open a ticket so that [commands] provision (or setup) installs it on"
                 " every machine.")
+
+
+# After a ship step that could not run: the machine's lack is no attempt at the work.
+NOT_COUNTED = ("Nothing was checked, so no attempt was counted. The same thing a second time in a row waits for a"
+               " person.")
 
 
 def could_not_run(code):

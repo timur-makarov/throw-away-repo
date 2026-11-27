@@ -8,8 +8,8 @@ and a `bin/` of commands.
 - It may be written in any language.
 
 **Rules:** a pack names its reader. It can only add hints; it never changes ticket state, and it never
-writes the journal. A guide (`rail docs guides`) is a hint too, with no code: a page the brief names
-for the agent to read.
+writes the journal. A guide (`rail docs guides`) is a hint too, with no code: a page whose text the
+brief carries.
 
 **When to make one:** when a feature has a reader but fails the test for the core: about 80% of projects
 would not use it, or a person could set it up once in a few minutes.

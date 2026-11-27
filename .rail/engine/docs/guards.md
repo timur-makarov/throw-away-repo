@@ -11,12 +11,33 @@ and `rail doctor` reports when they are missing.
 
 **The loop runs without asking.** Allow rules cover the agent's own verbs (`rail next`, `advance`, `add`,
 `adopt`, `answer`, `amend`, `status`, `stats`, `context`, `docs`, `doctor`, `intake`, `sweep`, `source`, `consult`, `save`,
-`provision`) and
+`provision`, `work`) and
 `gh run watch`.
 A matching allow rule is decided before any prompt and before auto mode's classifier, so the loop isn't
 stopped by either. `rail advance` is one of them, and it merges an AUTO ticket with no person: that is the
-policy you set with `person_paths` in `.rail/config.toml`. The person's verbs have no allow rule: `rail accept`, `rail drop` and
+policy you set with `[kinds]` and `person_paths` in `.rail/config.toml`. The person's verbs have no allow rule: `rail accept`, `rail drop` and
 `rail init` are judged like any other command, and `rail answer ... --owner` always asks, in every mode.
+
+**Looking things up.** `WebSearch` has an allow rule, so a worker, or you in your own session, can search for a
+fact the repository doesn't hold: a library's behaviour in the installed version, what an error means. The
+build guide tells the worker to write such a fact into the ticket as a `VERIFIED:` row with where it was read
+(`rail docs guides`). Three limits, each on purpose:
+
+- **Fetching a page has no allow rule.** A fetch names a URL, and a URL can carry data out of the repository,
+  so `WebFetch` is left to the session's permission mode: auto mode's classifier judges each one, and a
+  person's own session is asked. To let a documentation host through with no question, add
+  `"WebFetch(domain:docs.example.com)"` to `permissions.allow` in `.claude/settings.json`.
+- **The reviewer, the refuter, the security seat and consult have no web tools.** `[review] command` and
+  `[consult] command` list their tools, and neither search nor fetch is among them. Their word decides a
+  merge, a web page is text nobody here wrote, and a review should come out the same from the same
+  repository. What they need to know of the outside is in the ticket's `VERIFIED:` rows.
+- **A service you look things up in is a tool.** A documentation service, an MCP server or an API with a key is
+  declared as `[tools.NAME]`, so every agent is told of it and a ticket isn't claimed while it is out of reach
+  (`rail docs tools`).
+
+What can be known before the work starts belongs in the contract: the contract writer checks it and writes it
+as a fact, and leaves an `ASSUMED:` row for what it could not check. Looking up during the work is for what
+nobody could foresee.
 
 Auto mode's own rule lists (the `autoMode` setting) can't be set here: Claude Code reads them from user or
 managed settings only, never from a repository. Nothing Rail does needs them changed. The engine makes the
@@ -87,10 +108,15 @@ No git hooks are installed: they would collide with a project's own hook manager
 checks. The sandbox is turned on with `"sandbox": {"enabled": true}`; where its tools (bubblewrap and socat
 on Linux) are missing, Claude Code runs without it and says so.
 
-Two settings let the engine work inside it. `rail advance` and `rail next` are in `excludedCommands`, so a
-call that holds only those commands runs outside the sandbox: the engine writes the journal, which the deny
-rule on `.rail/journal/**` otherwise forbids to every sandboxed command, the engine included. The price is
-that `verify` and the checks, which `rail advance` starts, run outside the sandbox in such a call.
+Two settings let the engine work inside it. `rail advance`, `rail next` and `rail work` are in
+`excludedCommands`, so a call that holds only those commands runs outside the sandbox: the engine writes the
+journal, which the deny rule on `.rail/journal/**` otherwise forbids to every sandboxed command, the engine
+included. The price is that `verify`, the checks and the engine's re-run of a reviewer's evidence commands,
+which `rail advance` starts, run outside the sandbox in such a call. The worker `rail work` starts is a `claude -p`
+process with the repository's settings: their hooks run in it, the guard included, while their allow rules
+apply only in a folder Claude Code trusts. The default `[worker] command` uses auto mode, and
+`--permission-prompts none` turns a call nobody can approve into a denial the worker reads.
 `api.anthropic.com` is an allowed domain, so the reviewer, which is a `claude -p` process the engine starts,
-can answer when `rail advance` is one command of a longer call and stays sandboxed. Add the hosts your own
-`verify` needs to `sandbox.network.allowedDomains`.
+can answer when `rail advance` is one command of a longer call and stays sandboxed. `rail init` adds the
+package registries of the languages it finds (`rail docs languages`). Add the other hosts your own `verify`
+needs to `sandbox.network.allowedDomains`.

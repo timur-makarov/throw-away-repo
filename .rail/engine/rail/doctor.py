@@ -66,6 +66,26 @@ def checks(project):
                                           " they pause unattended cloud sessions, and the guard hook asks the same on"
                                           " your own machine"))
 
+    worker = project.config["worker"]
+    if worker["command"]:
+        # The runner calls rail work in one Bash call: the Bash tool ends it at its ceiling, 10 minutes when unset.
+        ceiling = (settings.get("env") or {}).get("BASH_MAX_TIMEOUT_MS")
+        ceiling = int(ceiling) if str(ceiling).isdigit() else 600000
+        under = worker["timeout_minutes"] * 60000 < ceiling
+        found.append(("worker timeout", under, f"[worker] timeout_minutes ({worker['timeout_minutes']}) is under the Bash"
+                      f" tool's ceiling ({ceiling // 60000} min)" if under else
+                      f"[worker] timeout_minutes ({worker['timeout_minutes']}) is not under the Bash tool's ceiling"
+                      f" ({ceiling // 60000} min, BASH_MAX_TIMEOUT_MS in .claude/settings.json's env; 10 when unset):"
+                      " the Bash call that runs rail work would end first. Lower it, or raise the ceiling"))
+
+    old = [name for name in ("reviewer.md", "review-v1.json") if f".rail/engine/{name}" in project.config["review"]["command"]]
+    if old:
+        found.append(("review command", False,
+                      f"[review] command reads .rail/engine/{' and '.join(old)} from the ticket's worktree, so a ticket"
+                      " that changes them is reviewed by its own copy. Use the paths the engine passes, which hold the"
+                      ' base branch\'s: --system-prompt-file "$RAIL_REVIEW_PROMPT" and --json-schema'
+                      ' "$(cat "$RAIL_REVIEW_SCHEMA")"'))
+
     agents = os.path.join(root, "AGENTS.md")
     has_section = os.path.exists(agents) and any(l.strip() == "## Rail" for l in open(agents).read().splitlines())
     found.append(("AGENTS.md", has_section, "has the ## Rail section" if has_section else "no ## Rail section: run rail init"))
@@ -85,11 +105,27 @@ def checks(project):
         parent = os.path.dirname(parent)
 
     found.append(("config", True, ".rail/config.toml is valid"))  # Project() failed otherwise
+    from . import sensors
+    tools = sensors.tools(project)
+    if tools:
+        gone = [f"{tool} (sensor {name})" for name, tool in tools.items() if not shutil.which(tool)]
+        found.append(("sensors", not gone, f"the tools of the {len(tools)} sensors are on this machine" if not gone else
+                      f"not on this machine: {', '.join(gone)}; a sensor whose tool is missing can't run at ship"))
+    from . import tools as toolsmod
+    found += toolsmod.doctor(project)
+    found += toolsmod.doctor_workflows(project)
     guides = {key: path for key, path in project.config["guides"].items() if path}
     if guides:
-        gone = [f"{key} = {path}" for key, path in guides.items() if not os.path.isfile(os.path.join(root, path))]
+        from .docs import read_part
+        gone = [f"{key} = {path}" for key, path in guides.items() if not read_part(path, root)]
         found.append(("guides", not gone, f"the {len(guides)} pages [guides] names are there" if not gone else
-                      f"[guides] names pages that aren't there, so no brief names them: {', '.join(gone)}"))
+                      f"[guides] names pages or sections that aren't there, so no brief carries them:"
+                      f" {', '.join(gone)}"))
+    from . import init
+    bare = init.unprofiled(init.tracked_files(root), project.config)
+    if bare or project.config["profiles"]:
+        found.append(("languages", not bare, "every tracked manifest is covered by a [[profiles]] entry" if not bare
+                      else init.uncovered(bare)))
     from . import sources
     if sources.names(project):
         bad = sources.problems(project)
@@ -107,6 +143,8 @@ def checks(project):
         else:
             for name, passed, detail in forge.doctor_checks(project, repo):
                 found.append((name, passed, detail))
+            if found[-1][0] != "gh":  # gh reads the repository
+                found += toolsmod.github_checks(project, repo)
     return found
 
 
@@ -140,7 +178,7 @@ def cloud_checks(project):
                       " project thread); the machine's hooks do their work" if machine else
                       "Rail's hooks didn't run in this session (it holds several repositories, or is a project"
                       " thread), so the guard and the saves aren't active here. The environment's setup script puts"
-                      " them on the machine before a session starts (rail docs cloud); rail provision does it now if"
+                      " them on the machine before a session starts; rail provision does it now if"
                       " this session lets it. Until then GitHub's ruleset is the guard"))
     return found
 

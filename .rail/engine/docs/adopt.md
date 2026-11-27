@@ -10,9 +10,9 @@ It takes two steps, both `rail adopt`.
 
 With no branch named, it is the current one. The engine reads the branch against the base branch and creates
 nothing. Its brief lists the changed files with their line counts, the size against `[size] cap`, and the
-tier the change gets: `PERSON` when a changed file is on `person_paths` or `migration_paths`, and `AUTO`
-otherwise. A size over the cap leaves it `AUTO`: as for any AUTO ticket, its first ship offers a split, and it
-becomes PERSON when the split isn't taken (`rail docs loop`). It also writes a ticket draft to a file outside the repository and
+tier the change gets: `PERSON` when a changed file is on `person_paths`, `migration_paths` or `[kinds]`, and `AUTO`
+otherwise. A size over the cap leaves it `AUTO`: as for any AUTO ticket, its first ship offers a split, and size
+raises no tier (`rail docs loop`). It also writes a ticket draft to a file outside the repository and
 names it: `scope_paths` from the changed files, the tier, and the template's sections, empty. A folder becomes
 one glob, such as `src/report/**`, only when the branch changes every file in it; otherwise the files are
 listed.

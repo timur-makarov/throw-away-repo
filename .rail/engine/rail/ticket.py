@@ -8,10 +8,18 @@ import tomllib
 
 # AUTO: the engine accepts the contract and merges. PERSON: a person approves the contract and merges.
 TIERS = ("AUTO", "PERSON")
+# What a revert doesn't undo (rail docs kinds). A ticket is PERSON when its change does something of one of these kinds.
+# engine/reviewer.md names all but public-release, on purpose: a release that can't be pulled back takes effect only
+# at release (docs/kinds.md), so it is a person's question there, not one a reviewer answers from a ticket's diff. The
+# review schema's enum holds all of them: review.py checks an id against this one tuple, and naming it isn't wrong.
+KINDS = ("data-loss", "data-shape", "data-exposure", "external-effect", "access", "runs-with-secrets", "controls",
+         "infrastructure", "money", "licence", "public-release")
 FIELDS = {
     "id": str, "title": str, "tier": str, "scope_paths": list, "after": list,
-    "caused_by": str, "external_id": str, "reversibility": str, "rollback": str,
+    "caused_by": str, "external_id": str, "reversibility": str, "rollback": str, "person_reason": str,
+    "kind": str, "reverts": str,
 }
+TICKET_KINDS = ("revert",)  # `kind`: a ticket whose contract is built in. A revert takes ticket `reverts` out again
 # The `## Grilling` record a bot or a session writes when it questioned the person who asked for the ticket.
 TOPICS = ("scope", "done", "behaviour", "tier", "out-of-scope", "other")
 TAKEN = ("accepted", "edited", "rejected", "answered")  # answered: there was no recommendation to take
@@ -21,6 +29,10 @@ GRILL_KEYS = {"channel": "channel", "agent": "agent", "person": "person", "start
 VACUOUS = {"", "true", ":", "exit 0", "/bin/true", "/usr/bin/true", "pass", "ok", "works"}
 _CHECK = re.compile(r"^\s*[-*]\s+Check:\s*(.*)$")
 _ASSUMED = re.compile(r"^\s*[-*]\s+ASSUMED:\s*(.*)$")
+_DECIDED = re.compile(r"^\s*[-*]\s+VERIFIED:\s*decided, not checked\s*:\s*(\S.*)$", re.I)
+_NOT_TESTED = re.compile(r"^\s*(?:[-*]\s+)?not tested:\s*(\S.*)$", re.I)
+_NOTICED = re.compile(r"^\s*(?:[-*]\s+)?Noticed:\s*(\S.*)$")
+_DECIDED_BARE = re.compile(r"^\s*[-*]\s+VERIFIED:\s*decided, not checked\s*:?[\s.]*$", re.I)
 
 
 def rank(tier):
@@ -79,6 +91,21 @@ class Ticket:
     def scope(self):
         return [p for p in self.get("scope_paths", []) if isinstance(p, str)]
 
+    def reason_parts(self):
+        """Each part of `person_reason` ("kind id: where", parts separated by "; ") as (kind or None, the part)."""
+        reason = self.get("person_reason", "")
+        parts = [p.strip() for p in reason.split(";")] if isinstance(reason, str) else []
+        kinds = [p.partition(":")[0].strip() if ":" in p else "" for p in parts]
+        return [(k if k in KINDS else None, p) for k, p in zip(kinds, parts) if p]
+
+    @property
+    def kinds(self):
+        """The kinds `person_reason` names, in the order written, each once; [] when a part names none."""
+        parts = self.reason_parts()
+        if not parts or not all(k for k, _ in parts):
+            return []
+        return list(dict.fromkeys(k for k, _ in parts))
+
     @property
     def after(self):
         return [str(a) for a in self.get("after", [])]
@@ -91,6 +118,31 @@ class Ticket:
     def checks(self):
         """The runnable command of each 'Check:' line (the text inside the backticks)."""
         return [p[1:-1].strip() for p in self.check_lines() if _ticked(p)]
+
+    def why_line(self):
+        """The first line of `## Why`."""
+        return next((line.strip() for line in self.sections.get("Why", "").splitlines() if line.strip()), "")
+
+    def decided(self):
+        """What each 'VERIFIED: decided, not checked:' row decided: a choice nobody checked, with its reason."""
+        return self._rows(_DECIDED, "Assumptions")
+
+    def tried(self):
+        """The lines of `## Tried`: what an attempt at this ticket tried and why it didn't work."""
+        return [re.sub(r"^[-*]\s+", "", line.strip()) for line in self.sections.get("Tried", "").splitlines()
+                if line.strip()]
+
+    def not_tested(self):
+        """What the 'not tested: X, because Y' lines say, wherever the worker wrote them."""
+        return self._rows(_NOT_TESTED)
+
+    def noticed(self):
+        """What the 'Noticed:' lines say: problems seen outside the ticket and left alone."""
+        return self._rows(_NOTICED)
+
+    def _rows(self, pattern, section=None):
+        text = self.sections.get(section, "") if section else "\n".join(self.sections.values())
+        return [m.group(1).strip() for m in map(pattern.match, text.splitlines()) if m]
 
     def open_assumptions(self):
         lines = self.sections.get("Assumptions", "").splitlines()
@@ -189,6 +241,16 @@ def lint(ticket, expect_id=None):
         errors.append("title is empty")
     if ticket.tier not in TIERS:
         errors.append(f"tier must be one of {', '.join(TIERS)}")
+    reason = ticket.get("person_reason", "")
+    if isinstance(reason, str) and (reason.strip() or ticket.tier == "PERSON") and not ticket.kinds:
+        bad = next((part for kind, part in ticket.reason_parts() if not kind), reason)
+        errors.append(f"a PERSON ticket needs person_reason: the id of what in the change can't be undone"
+                      f" ({', '.join(KINDS)}), a colon, and where, such as"
+                      " person_reason = \"access: src/auth/session.py\". Separate several with \"; \". A change with"
+                      " none of those kinds is AUTO"
+                      if not reason.strip() else
+                      f"person_reason must start with a kind's id and a colon, and so must each part after a \"; \""
+                      f" ({', '.join(KINDS)}); got '{bad}'")
     scope = ticket.get("scope_paths", [])
     if not scope or not all(isinstance(p, str) and p.strip() for p in scope):
         errors.append("scope_paths must list at least one path glob")
@@ -198,10 +260,22 @@ def lint(ticket, expect_id=None):
         errors.append("a ticket can't come after itself")
     if not ticket.sections.get("Why"):
         errors.append("'## Why' is missing or empty")
+    kind = ticket.get("kind")
+    if kind is not None and kind not in TICKET_KINDS:
+        errors.append(f"kind must be one of {', '.join(TICKET_KINDS)}, or left out")
+    reverts = ticket.get("reverts")
+    if kind == "revert" and not (isinstance(reverts, str) and reverts.strip().isdigit()):
+        errors.append('a revert ticket needs reverts = "NN", the id of the merged ticket it takes out')
+    elif kind != "revert" and reverts is not None:
+        errors.append("'reverts' belongs to a ticket with kind = \"revert\"")
     if "Done Contract" not in ticket.sections:
         errors.append("'## Done Contract' is missing")
-    elif not ticket.check_lines():
+    elif not ticket.check_lines() and kind != "revert":
+        # A revert's check is built in: ship compares the change with the reverse of the reverted ticket's.
         errors.append("the Done Contract needs at least one '- Check: `command`' line")
+    if any(_DECIDED_BARE.match(line) for line in ticket.sections.get("Assumptions", "").splitlines()):
+        errors.append("a 'VERIFIED: decided, not checked:' row needs, after the colon, what you decided, your reason and"
+                      " what it costs if you are wrong: a decision with no reason can't be checked later")
     errors += ticket.grilling()[1]
     for payload in ticket.check_lines():
         if not _ticked(payload):
